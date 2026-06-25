@@ -1,10 +1,12 @@
-import { Plugin } from "obsidian";
+import { App, Plugin, PluginSettingTab, Setting } from "obsidian";
 
 interface Store {
   leftCompact: boolean;
   rightCompact: boolean;
   leftWidth: number;
   rightWidth: number;
+  leftDisabled: boolean;
+  rightDisabled: boolean;
 }
 
 const HOVER_ZONE_PX = 8;
@@ -24,6 +26,10 @@ export default class AutoSidebarPlugin extends Plugin {
   private rightCompact = false;
   private leftWidth = 270;
   private rightWidth = 270;
+
+  /** Disabled — sidebar stays permanently collapsed/unexpandable */
+  private leftDisabled = false;
+  private rightDisabled = false;
 
   private listenerActive = false;
   private hideTimers: Record<string, ReturnType<typeof setTimeout> | null> = {
@@ -48,7 +54,11 @@ export default class AutoSidebarPlugin extends Plugin {
       this.rightCompact = (data as Store).rightCompact ?? false;
       this.leftWidth = (data as Store).leftWidth ?? 270;
       this.rightWidth = (data as Store).rightWidth ?? 270;
+      this.leftDisabled = (data as Store).leftDisabled ?? false;
+      this.rightDisabled = (data as Store).rightDisabled ?? false;
     }
+
+    this.addSettingTab(new AutoSidebarSettingTab(this.app, this));
 
     this.addCommand({
       id: "toggle-left-compact",
@@ -63,8 +73,18 @@ export default class AutoSidebarPlugin extends Plugin {
 
     this.app.workspace.onLayoutReady(() => {
       // On startup: restore CM instantly without animation
-      if (this.leftCompact) this.enterCompact("left", true);
-      if (this.rightCompact) this.enterCompact("right", true);
+      if (!this.leftDisabled && this.leftCompact) this.enterCompact("left", true);
+      if (!this.rightDisabled && this.rightCompact) this.enterCompact("right", true);
+
+      // If disabled, ensure sidebar is collapsed via Obsidian API
+      if (this.leftDisabled) {
+        const split = this.splitAPI("left");
+        if (split && !split.collapsed) split.collapse();
+      }
+      if (this.rightDisabled) {
+        const split = this.splitAPI("right");
+        if (split && !split.collapsed) split.collapse();
+      }
     });
   }
 
@@ -79,6 +99,7 @@ export default class AutoSidebarPlugin extends Plugin {
      ================================================================ */
 
   private toggle(side: "left" | "right"): void {
+    if (this.disabledState(side)) return;
     if (this.compactState(side)) {
       this.uncompact(side);
     } else {
@@ -91,6 +112,7 @@ export default class AutoSidebarPlugin extends Plugin {
      ================================================================ */
 
   private enterCompact(side: "left" | "right", instant: boolean): void {
+    if (this.disabledState(side)) return;
     const split = this.splitAPI(side);
     if (!split) return;
     split.expand();
@@ -269,6 +291,7 @@ export default class AutoSidebarPlugin extends Plugin {
   };
 
   private edgeCheck(side: "left" | "right", x: number, y: number): void {
+    if (this.disabledState(side)) return;
     const el = this.splitEl(side);
     if (!el) return;
 
@@ -362,6 +385,8 @@ export default class AutoSidebarPlugin extends Plugin {
       rightCompact: this.rightCompact,
       leftWidth: this.leftWidth,
       rightWidth: this.rightWidth,
+      leftDisabled: this.leftDisabled,
+      rightDisabled: this.rightDisabled,
     } as Store);
   }
 
@@ -396,6 +421,35 @@ export default class AutoSidebarPlugin extends Plugin {
     return side === "left" ? this.leftCompact : this.rightCompact;
   }
 
+  private disabledState(side: "left" | "right"): boolean {
+    return side === "left" ? this.leftDisabled : this.rightDisabled;
+  }
+
+  /** Enable/disable a sidebar.  When enabling disable, the sidebar is exited
+   *  from CM (if active) and collapsed via the Obsidian API. */
+  public setDisabled(side: "left" | "right", value: boolean): void {
+    if (side === "left") this.leftDisabled = value;
+    else this.rightDisabled = value;
+
+    if (value) {
+      // Exit CM immediately if active
+      if (this.compactState(side)) {
+        this.cleanupSide(side);
+        this.setCompact(side, false);
+      }
+
+      // Collapse via Obsidian API — keeps sidebar closed in NCM
+      const split = this.splitAPI(side);
+      if (split && !split.collapsed) {
+        split.collapse();
+      }
+
+      this.syncListener();
+    }
+
+    this.persist();
+  }
+
   private setCompact(side: "left" | "right", v: boolean): void {
     if (side === "left") this.leftCompact = v;
     else this.rightCompact = v;
@@ -419,5 +473,49 @@ export default class AutoSidebarPlugin extends Plugin {
     el.style.removeProperty("min-width");
     el.style.removeProperty("transition");
     el.style.overflow = "";
+  }
+}
+
+/* ================================================================
+   SETTINGS TAB
+   ================================================================ */
+
+class AutoSidebarSettingTab extends PluginSettingTab {
+  private plugin: AutoSidebarPlugin;
+
+  constructor(app: App, plugin: AutoSidebarPlugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+
+  display(): void {
+    const { containerEl } = this;
+    containerEl.empty();
+
+    new Setting(containerEl)
+      .setName("Disable left sidebar")
+      .setDesc(
+        "Keep left sidebar permanently collapsed. Keyboard shortcuts, hover, and CM transitions will not expand it.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin["leftDisabled"])
+          .onChange((value) => {
+            this.plugin.setDisabled("left", value);
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Disable right sidebar")
+      .setDesc(
+        "Keep right sidebar permanently collapsed. Keyboard shortcuts, hover, and CM transitions will not expand it.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin["rightDisabled"])
+          .onChange((value) => {
+            this.plugin.setDisabled("right", value);
+          }),
+      );
   }
 }

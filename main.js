@@ -43,6 +43,9 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     this.rightCompact = false;
     this.leftWidth = 270;
     this.rightWidth = 270;
+    /** Disabled — sidebar stays permanently collapsed/unexpandable */
+    this.leftDisabled = false;
+    this.rightDisabled = false;
     this.listenerActive = false;
     this.hideTimers = {
       left: null,
@@ -97,14 +100,17 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
      LIFECYCLE
      ================================================================ */
   async onload() {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f;
     const data = await this.loadData();
     if (data) {
       this.leftCompact = (_a = data.leftCompact) != null ? _a : false;
       this.rightCompact = (_b = data.rightCompact) != null ? _b : false;
       this.leftWidth = (_c = data.leftWidth) != null ? _c : 270;
       this.rightWidth = (_d = data.rightWidth) != null ? _d : 270;
+      this.leftDisabled = (_e = data.leftDisabled) != null ? _e : false;
+      this.rightDisabled = (_f = data.rightDisabled) != null ? _f : false;
     }
+    this.addSettingTab(new AutoSidebarSettingTab(this.app, this));
     this.addCommand({
       id: "toggle-left-compact",
       name: "Toggle left compact mode",
@@ -116,10 +122,20 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
       callback: () => this.toggle("right")
     });
     this.app.workspace.onLayoutReady(() => {
-      if (this.leftCompact)
+      if (!this.leftDisabled && this.leftCompact)
         this.enterCompact("left", true);
-      if (this.rightCompact)
+      if (!this.rightDisabled && this.rightCompact)
         this.enterCompact("right", true);
+      if (this.leftDisabled) {
+        const split = this.splitAPI("left");
+        if (split && !split.collapsed)
+          split.collapse();
+      }
+      if (this.rightDisabled) {
+        const split = this.splitAPI("right");
+        if (split && !split.collapsed)
+          split.collapse();
+      }
     });
   }
   onunload() {
@@ -131,6 +147,8 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
      TOGGLE
      ================================================================ */
   toggle(side) {
+    if (this.disabledState(side))
+      return;
     if (this.compactState(side)) {
       this.uncompact(side);
     } else {
@@ -141,6 +159,8 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
      ENTER COMPACT MODE  (NCM → CM)
      ================================================================ */
   enterCompact(side, instant) {
+    if (this.disabledState(side))
+      return;
     const split = this.splitAPI(side);
     if (!split)
       return;
@@ -236,6 +256,8 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     }, HIDE_SMOOTH_MS + 50);
   }
   edgeCheck(side, x, y) {
+    if (this.disabledState(side))
+      return;
     const el = this.splitEl(side);
     if (!el)
       return;
@@ -317,7 +339,9 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
       leftCompact: this.leftCompact,
       rightCompact: this.rightCompact,
       leftWidth: this.leftWidth,
-      rightWidth: this.rightWidth
+      rightWidth: this.rightWidth,
+      leftDisabled: this.leftDisabled,
+      rightDisabled: this.rightDisabled
     });
   }
   /* ================================================================
@@ -342,6 +366,29 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
   }
   compactState(side) {
     return side === "left" ? this.leftCompact : this.rightCompact;
+  }
+  disabledState(side) {
+    return side === "left" ? this.leftDisabled : this.rightDisabled;
+  }
+  /** Enable/disable a sidebar.  When enabling disable, the sidebar is exited
+   *  from CM (if active) and collapsed via the Obsidian API. */
+  setDisabled(side, value) {
+    if (side === "left")
+      this.leftDisabled = value;
+    else
+      this.rightDisabled = value;
+    if (value) {
+      if (this.compactState(side)) {
+        this.cleanupSide(side);
+        this.setCompact(side, false);
+      }
+      const split = this.splitAPI(side);
+      if (split && !split.collapsed) {
+        split.collapse();
+      }
+      this.syncListener();
+    }
+    this.persist();
   }
   setCompact(side, v) {
     if (side === "left")
@@ -368,5 +415,29 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     el.style.removeProperty("min-width");
     el.style.removeProperty("transition");
     el.style.overflow = "";
+  }
+};
+var AutoSidebarSettingTab = class extends import_obsidian.PluginSettingTab {
+  constructor(app, plugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    new import_obsidian.Setting(containerEl).setName("Disable left sidebar").setDesc(
+      "Keep left sidebar permanently collapsed. Keyboard shortcuts, hover, and CM transitions will not expand it."
+    ).addToggle(
+      (toggle) => toggle.setValue(this.plugin["leftDisabled"]).onChange((value) => {
+        this.plugin.setDisabled("left", value);
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Disable right sidebar").setDesc(
+      "Keep right sidebar permanently collapsed. Keyboard shortcuts, hover, and CM transitions will not expand it."
+    ).addToggle(
+      (toggle) => toggle.setValue(this.plugin["rightDisabled"]).onChange((value) => {
+        this.plugin.setDisabled("right", value);
+      })
+    );
   }
 };
