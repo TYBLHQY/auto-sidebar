@@ -36,17 +36,14 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     super(...arguments);
     this.leftCompact = false;
     this.leftWidth = 270;
-    /** Disabled — sidebar stays permanently collapsed/unexpandable */
-    this.leftDisabled = false;
     this.listenerActive = false;
     this.hideTimer = null;
     this.leaveTimer = null;
-    /** Obsidian's inline `width` before we overwrite it for overlay. */
+    /** Obsidian's inline `width` before the plugin overrides it. */
     this.obsidianWidth = "";
     /* ================================================================
        HOVER DETECTION
        ================================================================ */
-    /** Mouse left Obsidian's window entirely — start delayed hide. */
     this.onDocumentLeave = () => {
       if (!this.leftCompact)
         return;
@@ -60,16 +57,11 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
         this.leaveTimer = null;
       }, DOC_LEAVE_DELAY_MS);
     };
-    /** Mouse re-entered the window — cancel pending hide. */
     this.onDocumentEnter = () => {
       if (this.leaveTimer !== null) {
         clearTimeout(this.leaveTimer);
         this.leaveTimer = null;
       }
-    };
-    /** Window lost focus (Alt+Tab, Win+Tab, Cmd+`) — trigger delayed hide. */
-    this.onWindowBlur = () => {
-      this.onDocumentLeave();
     };
     this.onMouseMove = (e) => {
       if (this.leftCompact)
@@ -80,66 +72,51 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
      LIFECYCLE
      ================================================================ */
   async onload() {
-    var _a, _b, _c;
+    var _a, _b;
     const data = await this.loadData();
     if (data) {
       this.leftCompact = (_a = data.leftCompact) != null ? _a : false;
       this.leftWidth = (_b = data.leftWidth) != null ? _b : 270;
-      this.leftDisabled = (_c = data.leftDisabled) != null ? _c : false;
     }
-    this.addSettingTab(new AutoSidebarSettingTab(this.app, this));
     this.addCommand({
       id: "toggle-left-compact",
       name: "Toggle compact mode",
       callback: () => this.toggle()
     });
-    this.app.workspace.onLayoutReady(() => {
-      if (!this.leftDisabled && this.leftCompact) {
-        const split = this.splitAPI();
-        if (split) {
-          split.expand();
-          requestAnimationFrame(() => {
-            const el = this.splitEl();
-            if (!el)
-              return;
-            this.obsidianWidth = el.style.width || "";
-            el.style.setProperty("width", this.leftWidth + "px", "important");
-            el.classList.add("auto-sidebar-compact");
-            this.leftCompact = true;
-            this.syncListener();
-            this.persist();
-          });
-        }
-      }
-      if (this.leftDisabled) {
-        const split = this.splitAPI();
-        if (split && !split.collapsed)
-          split.collapse();
-      }
-    });
+    this.app.workspace.onLayoutReady(() => this.restoreStartup());
   }
   onunload() {
-    this.cleanupSide();
+    this.stripCMStyles();
     this.teardownListeners();
   }
   /* ================================================================
-     TOGGLE
+     STARTUP RESTORE
+     ================================================================ */
+  restoreStartup() {
+    if (!this.leftCompact)
+      return;
+    const split = this.splitAPI();
+    if (!split)
+      return;
+    split.expand();
+    requestAnimationFrame(() => {
+      var _a;
+      this.obsidianWidth = ((_a = this.splitEl()) == null ? void 0 : _a.style.width) || "";
+      this.applyCompactStyles(this.leftWidth);
+    });
+  }
+  /* ================================================================
+     ENTER / EXIT COMPACT MODE
      ================================================================ */
   toggle() {
-    if (this.leftDisabled)
-      return;
     if (this.leftCompact) {
       this.uncompact();
     } else {
       this.enterCompact();
     }
   }
-  /* ================================================================
-     ENTER COMPACT MODE  (NCM → CM)
-     ================================================================ */
+  /** NCM → CM: expand, measure, apply compact styles. */
   enterCompact() {
-    if (this.leftDisabled)
-      return;
     const split = this.splitAPI();
     if (!split)
       return;
@@ -156,39 +133,36 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
       }
       this.leftWidth = w;
       this.obsidianWidth = el.style.width || "";
-      el.style.setProperty("width", w + "px", "important");
-      el.classList.add("auto-sidebar-compact");
-      this.leftCompact = true;
-      this.syncListener();
-      this.persist();
+      this.applyCompactStyles(w);
     });
   }
-  /* ================================================================
-     EXIT COMPACT MODE  (CM → NCM)
-     ================================================================ */
+  /** CM → NCM: remove positioning first, then expand via API. */
   uncompact() {
+    var _a;
     const el = this.splitEl();
     if (!el)
       return;
-    const split = this.splitAPI();
-    const w = this.leftWidth;
-    el.classList.remove(
-      "auto-sidebar-compact",
-      "auto-sidebar-visible"
-    );
-    split == null ? void 0 : split.expand();
+    el.classList.remove("auto-sidebar-compact", "auto-sidebar-visible");
+    (_a = this.splitAPI()) == null ? void 0 : _a.expand();
     el.style.removeProperty("width");
-    if (this.obsidianWidth) {
-      el.style.width = this.obsidianWidth;
-    } else {
-      el.style.width = w + "px";
-    }
+    el.style.width = this.obsidianWidth || this.leftWidth + "px";
     this.leftCompact = false;
-    this.persist();
     this.syncListener();
+    this.persist();
+  }
+  /** Set inline width, add CM classes, sync state. */
+  applyCompactStyles(width) {
+    const el = this.splitEl();
+    if (!el)
+      return;
+    el.style.setProperty("width", width + "px", "important");
+    el.classList.add("auto-sidebar-compact");
+    this.leftCompact = true;
+    this.syncListener();
+    this.persist();
   }
   /* ================================================================
-     OVERLAY SHOW / HIDE  (CM only, hover-triggered, no animation)
+     OVERLAY SHOW / HIDE  (hover-triggered, CM only)
      ================================================================ */
   revealOverlay() {
     const el = this.splitEl();
@@ -207,8 +181,6 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     el.classList.remove("auto-sidebar-visible");
   }
   edgeCheck(x, y) {
-    if (this.leftDisabled)
-      return;
     const el = this.splitEl();
     if (!el)
       return;
@@ -254,13 +226,13 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
       document.addEventListener("mousemove", this.onMouseMove);
       document.documentElement.addEventListener("mouseleave", this.onDocumentLeave);
       document.documentElement.addEventListener("mouseenter", this.onDocumentEnter);
-      window.addEventListener("blur", this.onWindowBlur);
+      window.addEventListener("blur", this.onDocumentLeave);
       this.listenerActive = true;
     } else if (!this.leftCompact && this.listenerActive) {
       document.removeEventListener("mousemove", this.onMouseMove);
       document.documentElement.removeEventListener("mouseleave", this.onDocumentLeave);
       document.documentElement.removeEventListener("mouseenter", this.onDocumentEnter);
-      window.removeEventListener("blur", this.onWindowBlur);
+      window.removeEventListener("blur", this.onDocumentLeave);
       this.listenerActive = false;
     }
   }
@@ -270,7 +242,7 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     document.removeEventListener("mousemove", this.onMouseMove);
     document.documentElement.removeEventListener("mouseleave", this.onDocumentLeave);
     document.documentElement.removeEventListener("mouseenter", this.onDocumentEnter);
-    window.removeEventListener("blur", this.onWindowBlur);
+    window.removeEventListener("blur", this.onDocumentLeave);
     this.listenerActive = false;
   }
   /* ================================================================
@@ -279,8 +251,7 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
   persist() {
     this.saveData({
       leftCompact: this.leftCompact,
-      leftWidth: this.leftWidth,
-      leftDisabled: this.leftDisabled
+      leftWidth: this.leftWidth
     });
   }
   /* ================================================================
@@ -293,64 +264,18 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     var _a, _b;
     return (_b = (_a = this.splitAPI()) == null ? void 0 : _a.containerEl) != null ? _b : null;
   }
-  /** Enable/disable the sidebar.  When enabling disable, the sidebar is
-   *  exited from CM (if active) and collapsed via the Obsidian API.  When
-   *  disabling disable, the sidebar is expanded again. */
-  setDisabled(value) {
-    this.leftDisabled = value;
-    if (value) {
-      if (this.leftCompact) {
-        this.cleanupSide();
-        this.leftCompact = false;
-      }
-      const split = this.splitAPI();
-      if (split && !split.collapsed) {
-        split.collapse();
-      }
-      this.syncListener();
-    } else {
-      const split = this.splitAPI();
-      if (split && split.collapsed) {
-        split.expand();
-      }
-    }
-    this.persist();
-  }
-  cleanupSide() {
+  /** Strip CM classes and restore Obsidian's original width (plugin unload). */
+  stripCMStyles() {
+    var _a, _b;
     const el = this.splitEl();
     if (!el)
       return;
-    const split = this.splitAPI();
-    if (split == null ? void 0 : split.collapsed)
-      split.expand();
-    el.classList.remove(
-      "auto-sidebar-compact",
-      "auto-sidebar-visible"
-    );
+    if ((_a = this.splitAPI()) == null ? void 0 : _a.collapsed)
+      (_b = this.splitAPI()) == null ? void 0 : _b.expand();
+    el.classList.remove("auto-sidebar-compact", "auto-sidebar-visible");
     el.style.removeProperty("width");
     if (this.obsidianWidth) {
       el.style.width = this.obsidianWidth;
     }
-    el.style.removeProperty("flex-basis");
-    el.style.removeProperty("min-width");
-    el.style.removeProperty("transition");
-    el.style.overflow = "";
-  }
-};
-var AutoSidebarSettingTab = class extends import_obsidian.PluginSettingTab {
-  constructor(app, plugin) {
-    super(app, plugin);
-    this.plugin = plugin;
-  }
-  display() {
-    const { containerEl } = this;
-    containerEl.empty();
-    new import_obsidian.Setting(containerEl).setName("Disable sidebar").setDesc(
-      "Keep left sidebar permanently collapsed. Keyboard shortcuts, hover, and CM transitions will not expand it."
-    ).addToggle(
-      (toggle) => toggle.setValue(this.plugin["leftDisabled"]).onChange((value) => {
-        this.plugin.setDisabled(value);
-      })
-    );
   }
 };
