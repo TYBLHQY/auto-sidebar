@@ -1,11 +1,11 @@
 {
-  "id": "auto-sidebar",
-  "name": "Auto Sidebar",
-  "version": "1.0.1",
-  "minAppVersion": "0.15.0",
-  "description": "Zen Browser-style compact mode for sidebars.",
-  "author": "MYQ",
-  "authorUrl": "https://github.com/TYBLHQY",
-  "fundingUrl": "",
-  "isDesktopOnly": true
+	"id": "auto-sidebar",
+	"name": "Auto Sidebar",
+	"version": "1.0.2",
+	"minAppVersion": "0.15.0",
+	"description": "Zen Browser-style compact mode for sidebars.",
+	"author": "MYQ",
+	"authorUrl": "https://github.com/TYBLHQY",
+	"fundingUrl": "",
+	"isDesktopOnly": true
 }

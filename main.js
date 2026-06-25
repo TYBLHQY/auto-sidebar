@@ -57,14 +57,14 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
         return;
       if (this.leaveTimer !== null)
         return;
-      this.leaveTimer = setTimeout(() => {
+      this.leaveTimer = window.setTimeout(() => {
         this.concealOverlay();
         this.leaveTimer = null;
       }, DOC_LEAVE_DELAY_MS);
     };
     this.onDocumentEnter = () => {
       if (this.leaveTimer !== null) {
-        clearTimeout(this.leaveTimer);
+        window.clearTimeout(this.leaveTimer);
         this.leaveTimer = null;
       }
     };
@@ -116,7 +116,7 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     if (!split)
       return;
     split.expand();
-    requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
       const el = this.splitEl();
       if (!el)
         return;
@@ -205,32 +205,32 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
   startHideTimer() {
     if (this.hideTimer !== null)
       return;
-    this.hideTimer = setTimeout(() => {
+    this.hideTimer = window.setTimeout(() => {
       this.concealOverlay();
       this.hideTimer = null;
     }, HIDE_DELAY_MS);
   }
   clearTimer() {
     if (this.hideTimer !== null) {
-      clearTimeout(this.hideTimer);
+      window.clearTimeout(this.hideTimer);
       this.hideTimer = null;
     }
     if (this.leaveTimer !== null) {
-      clearTimeout(this.leaveTimer);
+      window.clearTimeout(this.leaveTimer);
       this.leaveTimer = null;
     }
   }
   syncListener() {
     if (this.leftCompact && !this.listenerActive) {
-      document.addEventListener("mousemove", this.onMouseMove, { passive: true });
-      document.documentElement.addEventListener("mouseleave", this.onDocumentLeave);
-      document.documentElement.addEventListener("mouseenter", this.onDocumentEnter);
+      activeDocument.addEventListener("mousemove", this.onMouseMove, { passive: true });
+      activeDocument.documentElement.addEventListener("mouseleave", this.onDocumentLeave);
+      activeDocument.documentElement.addEventListener("mouseenter", this.onDocumentEnter);
       window.addEventListener("blur", this.onDocumentLeave);
       this.listenerActive = true;
     } else if (!this.leftCompact && this.listenerActive) {
-      document.removeEventListener("mousemove", this.onMouseMove);
-      document.documentElement.removeEventListener("mouseleave", this.onDocumentLeave);
-      document.documentElement.removeEventListener("mouseenter", this.onDocumentEnter);
+      activeDocument.removeEventListener("mousemove", this.onMouseMove);
+      activeDocument.documentElement.removeEventListener("mouseleave", this.onDocumentLeave);
+      activeDocument.documentElement.removeEventListener("mouseenter", this.onDocumentEnter);
       window.removeEventListener("blur", this.onDocumentLeave);
       this.listenerActive = false;
     }
@@ -238,9 +238,9 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
   teardownListeners() {
     if (!this.listenerActive)
       return;
-    document.removeEventListener("mousemove", this.onMouseMove);
-    document.documentElement.removeEventListener("mouseleave", this.onDocumentLeave);
-    document.documentElement.removeEventListener("mouseenter", this.onDocumentEnter);
+    activeDocument.removeEventListener("mousemove", this.onMouseMove);
+    activeDocument.documentElement.removeEventListener("mouseleave", this.onDocumentLeave);
+    activeDocument.documentElement.removeEventListener("mouseenter", this.onDocumentEnter);
     window.removeEventListener("blur", this.onDocumentLeave);
     this.listenerActive = false;
   }
@@ -248,7 +248,7 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
      PERSISTENCE
      ============================================================== */
   persist() {
-    this.saveData({
+    void this.saveData({
       leftCompact: this.leftCompact,
       leftWidth: this.leftWidth
     });

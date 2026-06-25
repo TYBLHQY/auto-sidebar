@@ -29,8 +29,8 @@ export default class AutoSidebarPlugin extends Plugin {
   private leftCompact = false;
   private leftWidth = 270;
   private listenerActive = false;
-  private hideTimer: ReturnType<typeof setTimeout> | null = null;
-  private leaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private hideTimer: number | null = null;
+  private leaveTimer: number | null = null;
   /** Obsidian's inline `width` before the plugin overrides it. */
   private obsidianWidth = "";
 
@@ -39,10 +39,10 @@ export default class AutoSidebarPlugin extends Plugin {
      ============================================================== */
 
   async onload(): Promise<void> {
-    const data = await this.loadData();
+    const data = await this.loadData() as PersistedData | null;
     if (data) {
-      this.leftCompact = (data as PersistedData).leftCompact ?? false;
-      this.leftWidth = (data as PersistedData).leftWidth ?? 270;
+      this.leftCompact = data.leftCompact ?? false;
+      this.leftWidth = data.leftWidth ?? 270;
     }
 
     this.addCommand({
@@ -91,7 +91,7 @@ export default class AutoSidebarPlugin extends Plugin {
     if (!split) return;
     split.expand();
 
-    requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
       const el = this.splitEl();
       if (!el) return;
 
@@ -181,7 +181,7 @@ export default class AutoSidebarPlugin extends Plugin {
     const el = this.splitEl();
     if (!el?.classList.contains("auto-sidebar-visible")) return;
     if (this.leaveTimer !== null) return;
-    this.leaveTimer = setTimeout(() => {
+    this.leaveTimer = window.setTimeout(() => {
       this.concealOverlay();
       this.leaveTimer = null;
     }, DOC_LEAVE_DELAY_MS);
@@ -189,7 +189,7 @@ export default class AutoSidebarPlugin extends Plugin {
 
   private onDocumentEnter = (): void => {
     if (this.leaveTimer !== null) {
-      clearTimeout(this.leaveTimer);
+      window.clearTimeout(this.leaveTimer);
       this.leaveTimer = null;
     }
   };
@@ -227,7 +227,7 @@ export default class AutoSidebarPlugin extends Plugin {
 
   private startHideTimer(): void {
     if (this.hideTimer !== null) return;
-    this.hideTimer = setTimeout(() => {
+    this.hideTimer = window.setTimeout(() => {
       this.concealOverlay();
       this.hideTimer = null;
     }, HIDE_DELAY_MS);
@@ -235,26 +235,26 @@ export default class AutoSidebarPlugin extends Plugin {
 
   private clearTimer(): void {
     if (this.hideTimer !== null) {
-      clearTimeout(this.hideTimer);
+      window.clearTimeout(this.hideTimer);
       this.hideTimer = null;
     }
     if (this.leaveTimer !== null) {
-      clearTimeout(this.leaveTimer);
+      window.clearTimeout(this.leaveTimer);
       this.leaveTimer = null;
     }
   }
 
   private syncListener(): void {
     if (this.leftCompact && !this.listenerActive) {
-      document.addEventListener("mousemove", this.onMouseMove, { passive: true });
-      document.documentElement.addEventListener("mouseleave", this.onDocumentLeave);
-      document.documentElement.addEventListener("mouseenter", this.onDocumentEnter);
+      activeDocument.addEventListener("mousemove", this.onMouseMove, { passive: true });
+      activeDocument.documentElement.addEventListener("mouseleave", this.onDocumentLeave);
+      activeDocument.documentElement.addEventListener("mouseenter", this.onDocumentEnter);
       window.addEventListener("blur", this.onDocumentLeave);
       this.listenerActive = true;
     } else if (!this.leftCompact && this.listenerActive) {
-      document.removeEventListener("mousemove", this.onMouseMove);
-      document.documentElement.removeEventListener("mouseleave", this.onDocumentLeave);
-      document.documentElement.removeEventListener("mouseenter", this.onDocumentEnter);
+      activeDocument.removeEventListener("mousemove", this.onMouseMove);
+      activeDocument.documentElement.removeEventListener("mouseleave", this.onDocumentLeave);
+      activeDocument.documentElement.removeEventListener("mouseenter", this.onDocumentEnter);
       window.removeEventListener("blur", this.onDocumentLeave);
       this.listenerActive = false;
     }
@@ -262,9 +262,9 @@ export default class AutoSidebarPlugin extends Plugin {
 
   private teardownListeners(): void {
     if (!this.listenerActive) return;
-    document.removeEventListener("mousemove", this.onMouseMove);
-    document.documentElement.removeEventListener("mouseleave", this.onDocumentLeave);
-    document.documentElement.removeEventListener("mouseenter", this.onDocumentEnter);
+    activeDocument.removeEventListener("mousemove", this.onMouseMove);
+    activeDocument.documentElement.removeEventListener("mouseleave", this.onDocumentLeave);
+    activeDocument.documentElement.removeEventListener("mouseenter", this.onDocumentEnter);
     window.removeEventListener("blur", this.onDocumentLeave);
     this.listenerActive = false;
   }
@@ -274,7 +274,7 @@ export default class AutoSidebarPlugin extends Plugin {
      ============================================================== */
 
   private persist(): void {
-    this.saveData({
+    void this.saveData({
       leftCompact: this.leftCompact,
       leftWidth: this.leftWidth,
     });
