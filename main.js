@@ -112,10 +112,27 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
       callback: () => this.toggle("right")
     });
     this.app.workspace.onLayoutReady(() => {
-      if (!this.leftDisabled && this.leftCompact)
-        this.enterCompact("left");
-      if (!this.rightDisabled && this.rightCompact)
-        this.enterCompact("right");
+      const tryRestoreCompact = (side) => {
+        if (this.disabledState(side) || !this.compactState(side))
+          return;
+        const split = this.splitAPI(side);
+        if (!split)
+          return;
+        split.expand();
+        requestAnimationFrame(() => {
+          const el = this.splitEl(side);
+          if (!el)
+            return;
+          this.obsidianWidth[side] = el.style.width || "";
+          el.style.setProperty("width", this.widthOf(side) + "px", "important");
+          el.classList.add("auto-sidebar-compact");
+          this.setCompact(side, true);
+          this.syncListener();
+          this.persist();
+        });
+      };
+      tryRestoreCompact("left");
+      tryRestoreCompact("right");
       if (this.leftDisabled) {
         const split = this.splitAPI("left");
         if (split && !split.collapsed)

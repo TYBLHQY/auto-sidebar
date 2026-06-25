@@ -64,10 +64,29 @@ export default class AutoSidebarPlugin extends Plugin {
     });
 
     this.app.workspace.onLayoutReady(() => {
-      // Restore CM at startup.  enterCompact will skip and reset the
-      // compact state if the sidebar has no real DOM width yet.
-      if (!this.leftDisabled && this.leftCompact) this.enterCompact("left");
-      if (!this.rightDisabled && this.rightCompact) this.enterCompact("right");
+      // On startup we expand both sidebars so the DOM element exists,
+      // then restore CM using the SAVED width — NOT the measured DOM
+      // width.  At this point the right sidebar's DOM may not have its
+      // final layout yet (width = 0), so measuring it would cause the
+      // restore to be skipped.
+      const tryRestoreCompact = (side: "left" | "right"): void => {
+        if (this.disabledState(side) || !this.compactState(side)) return;
+        const split = this.splitAPI(side);
+        if (!split) return;
+        split.expand();
+        requestAnimationFrame(() => {
+          const el = this.splitEl(side);
+          if (!el) return;
+          this.obsidianWidth[side] = el.style.width || "";
+          el.style.setProperty("width", this.widthOf(side) + "px", "important");
+          el.classList.add("auto-sidebar-compact");
+          this.setCompact(side, true);
+          this.syncListener();
+          this.persist();
+        });
+      };
+      tryRestoreCompact("left");
+      tryRestoreCompact("right");
 
       // If disabled, ensure sidebar is collapsed via Obsidian API
       if (this.leftDisabled) {
