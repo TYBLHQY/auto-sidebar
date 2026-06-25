@@ -112,30 +112,10 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
       callback: () => this.toggle("right")
     });
     this.app.workspace.onLayoutReady(() => {
-      const tryRestore = (side) => {
-        if (this.disabledState(side))
-          return;
-        if (!this.compactState(side))
-          return;
-        const split = this.splitAPI(side);
-        if (!split)
-          return;
-        split.expand();
-        requestAnimationFrame(() => {
-          const el = this.splitEl(side);
-          if (!el)
-            return;
-          const w = el.getBoundingClientRect().width;
-          if (w > 10) {
-            this.enterCompact(side);
-          } else {
-            this.setCompact(side, false);
-            this.persist();
-          }
-        });
-      };
-      tryRestore("left");
-      tryRestore("right");
+      if (!this.leftDisabled && this.leftCompact)
+        this.enterCompact("left");
+      if (!this.rightDisabled && this.rightCompact)
+        this.enterCompact("right");
       if (this.leftDisabled) {
         const split = this.splitAPI("left");
         if (split && !split.collapsed)
@@ -180,8 +160,12 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
       if (!el)
         return;
       const w = el.getBoundingClientRect().width;
-      if (w > 10)
-        this.setWidth(side, w);
+      if (w <= 10) {
+        this.setCompact(side, false);
+        this.persist();
+        return;
+      }
+      this.setWidth(side, w);
       this.obsidianWidth[side] = el.style.width || "";
       el.style.setProperty("width", w + "px", "important");
       el.classList.add("auto-sidebar-compact");
@@ -335,9 +319,9 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     return side === "left" ? this.app.workspace.leftSplit : this.app.workspace.rightSplit;
   }
   splitEl(side) {
-    return document.querySelector(
-      side === "left" ? ".workspace-split.mod-left-split" : ".workspace-split.mod-right-split"
-    );
+    var _a;
+    const split = this.splitAPI(side);
+    return (_a = split == null ? void 0 : split.containerEl) != null ? _a : null;
   }
   widthOf(side) {
     return side === "left" ? this.leftWidth : this.rightWidth;

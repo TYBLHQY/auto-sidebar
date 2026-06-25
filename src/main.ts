@@ -64,32 +64,10 @@ export default class AutoSidebarPlugin extends Plugin {
     });
 
     this.app.workspace.onLayoutReady(() => {
-      // On startup: restore CM only if the sidebar has a real DOM width.
-      // At this point Obsidian may not have fully laid out side docks,
-      // and entering CM with 0 width puts the sidebar in a broken state
-      // where the toggle can't recover from it.
-      const tryRestore = (side: "left" | "right"): void => {
-        if (this.disabledState(side)) return;
-        if (!this.compactState(side)) return;
-        const split = this.splitAPI(side);
-        if (!split) return;
-        split.expand();
-        requestAnimationFrame(() => {
-          const el = this.splitEl(side);
-          if (!el) return;
-          const w = el.getBoundingClientRect().width;
-          if (w > 10) {
-            this.enterCompact(side);
-          } else {
-            // Sidebar isn't laid out yet — reset state so the user
-            // can toggle normally.
-            this.setCompact(side, false);
-            this.persist();
-          }
-        });
-      };
-      tryRestore("left");
-      tryRestore("right");
+      // Restore CM at startup.  enterCompact will skip and reset the
+      // compact state if the sidebar has no real DOM width yet.
+      if (!this.leftDisabled && this.leftCompact) this.enterCompact("left");
+      if (!this.rightDisabled && this.rightCompact) this.enterCompact("right");
 
       // If disabled, ensure sidebar is collapsed via Obsidian API
       if (this.leftDisabled) {
@@ -137,7 +115,17 @@ export default class AutoSidebarPlugin extends Plugin {
       if (!el) return;
 
       const w = el.getBoundingClientRect().width;
-      if (w > 10) this.setWidth(side, w);
+
+      // Sidebar has no real DOM width (layout not ready, or collapsed
+      // via Obsidian API).  Don't enter CM — doing so puts the sidebar
+      // in a broken state where the toggle can't recover.
+      if (w <= 10) {
+        this.setCompact(side, false);
+        this.persist();
+        return;
+      }
+
+      this.setWidth(side, w);
 
       // Save Obsidian's inline width before we overwrite it
       this.obsidianWidth[side] = el.style.width || "";
@@ -360,11 +348,8 @@ export default class AutoSidebarPlugin extends Plugin {
   }
 
   private splitEl(side: "left" | "right"): HTMLElement | null {
-    return document.querySelector<HTMLElement>(
-      side === "left"
-        ? ".workspace-split.mod-left-split"
-        : ".workspace-split.mod-right-split",
-    );
+    const split = this.splitAPI(side);
+    return split?.containerEl ?? null;
   }
 
   private widthOf(side: "left" | "right"): number {
