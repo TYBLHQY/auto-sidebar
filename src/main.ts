@@ -8,7 +8,7 @@ interface Store {
 }
 
 const HOVER_ZONE_PX = 8;
-const HIDE_DELAY_MS = 400;
+const HIDE_DELAY_MS = 150;
 const SHOW_SPRING_MS = 250;
 const HIDE_SMOOTH_MS = 150;
 const SIZE_ANIM_MS = 200;

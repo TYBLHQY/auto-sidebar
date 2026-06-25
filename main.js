@@ -29,7 +29,7 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
 var HOVER_ZONE_PX = 8;
-var HIDE_DELAY_MS = 400;
+var HIDE_DELAY_MS = 150;
 var SHOW_SPRING_MS = 250;
 var HIDE_SMOOTH_MS = 150;
 var SIZE_ANIM_MS = 200;
