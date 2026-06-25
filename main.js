@@ -30,6 +30,7 @@ module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
 var HOVER_ZONE_PX = 8;
 var HIDE_DELAY_MS = 150;
+var DOC_LEAVE_DELAY_MS = 1e3;
 var SHOW_SPRING_MS = 250;
 var HIDE_SMOOTH_MS = 150;
 var SIZE_ANIM_MS = 200;
@@ -47,6 +48,10 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
       left: null,
       right: null
     };
+    this.leaveTimers = {
+      left: null,
+      right: null
+    };
     /** Obsidian's inline `width` before we overwrite it for overlay. */
     this.obsidianWidth = { left: "", right: "" };
     /* ================================================================
@@ -57,6 +62,30 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     /* ================================================================
        HOVER DETECTION
        ================================================================ */
+    /** Mouse left Obsidian's window entirely — start delayed hide. */
+    this.onDocumentLeave = () => {
+      for (const side of ["left", "right"]) {
+        if (!this.compactState(side))
+          continue;
+        const el = this.splitEl(side);
+        if (!(el == null ? void 0 : el.classList.contains("auto-sidebar-visible")))
+          continue;
+        if (this.leaveTimers[side] !== null)
+          continue;
+        this.leaveTimers[side] = setTimeout(() => {
+          this.concealOverlay(side);
+          this.leaveTimers[side] = null;
+        }, DOC_LEAVE_DELAY_MS);
+      }
+    };
+    /** Mouse re-entered the window — cancel pending hide. */
+    this.onDocumentEnter = () => {
+      this.clearLeaveTimers();
+    };
+    /** Window lost focus (Alt+Tab, Win+Tab, Cmd+`) — trigger delayed hide. */
+    this.onWindowBlur = () => {
+      this.onDocumentLeave();
+    };
     this.onMouseMove = (e) => {
       if (this.leftCompact)
         this.edgeCheck("left", e.clientX, e.clientY);
@@ -96,7 +125,7 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
   onunload() {
     this.cleanupSide("left");
     this.cleanupSide("right");
-    this.syncListener();
+    this.teardownListeners();
   }
   /* ================================================================
      TOGGLE
@@ -158,7 +187,10 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     const el = this.splitEl(side);
     if (!el)
       return;
+    const split = this.splitAPI(side);
     const w = this.widthOf(side);
+    if (split == null ? void 0 : split.collapsed)
+      split.expand();
     el.style.setProperty("width", w + "px", "important");
     el.classList.add("auto-sidebar-compact");
     el.classList.add("auto-sidebar-animate-overlay");
@@ -239,16 +271,43 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
       clearTimeout(this.hideTimers[side]);
       this.hideTimers[side] = null;
     }
+    if (this.leaveTimers[side] !== null) {
+      clearTimeout(this.leaveTimers[side]);
+      this.leaveTimers[side] = null;
+    }
+  }
+  clearLeaveTimers() {
+    for (const side of ["left", "right"]) {
+      if (this.leaveTimers[side] !== null) {
+        clearTimeout(this.leaveTimers[side]);
+        this.leaveTimers[side] = null;
+      }
+    }
   }
   syncListener() {
     const should = this.leftCompact || this.rightCompact;
     if (should && !this.listenerActive) {
       document.addEventListener("mousemove", this.onMouseMove);
+      document.documentElement.addEventListener("mouseleave", this.onDocumentLeave);
+      document.documentElement.addEventListener("mouseenter", this.onDocumentEnter);
+      window.addEventListener("blur", this.onWindowBlur);
       this.listenerActive = true;
     } else if (!should && this.listenerActive) {
       document.removeEventListener("mousemove", this.onMouseMove);
+      document.documentElement.removeEventListener("mouseleave", this.onDocumentLeave);
+      document.documentElement.removeEventListener("mouseenter", this.onDocumentEnter);
+      window.removeEventListener("blur", this.onWindowBlur);
       this.listenerActive = false;
     }
+  }
+  teardownListeners() {
+    if (!this.listenerActive)
+      return;
+    document.removeEventListener("mousemove", this.onMouseMove);
+    document.documentElement.removeEventListener("mouseleave", this.onDocumentLeave);
+    document.documentElement.removeEventListener("mouseenter", this.onDocumentEnter);
+    window.removeEventListener("blur", this.onWindowBlur);
+    this.listenerActive = false;
   }
   /* ================================================================
      PERSISTENCE

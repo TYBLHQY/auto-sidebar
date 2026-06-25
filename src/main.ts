@@ -8,7 +8,8 @@ interface Store {
 }
 
 const HOVER_ZONE_PX = 8;
-const HIDE_DELAY_MS = 150;
+const HIDE_DELAY_MS = 150;      // sidebar-keep-hover.duration (Zen default 150)
+const DOC_LEAVE_DELAY_MS = 1000; // toolbar-hide-after-hover.duration (Zen default 1000)
 const SHOW_SPRING_MS = 250;
 const HIDE_SMOOTH_MS = 150;
 const SIZE_ANIM_MS = 200;
@@ -26,6 +27,10 @@ export default class AutoSidebarPlugin extends Plugin {
 
   private listenerActive = false;
   private hideTimers: Record<string, ReturnType<typeof setTimeout> | null> = {
+    left: null,
+    right: null,
+  };
+  private leaveTimers: Record<string, ReturnType<typeof setTimeout> | null> = {
     left: null,
     right: null,
   };
@@ -66,7 +71,7 @@ export default class AutoSidebarPlugin extends Plugin {
   onunload(): void {
     this.cleanupSide("left");
     this.cleanupSide("right");
-    this.syncListener();
+    this.teardownListeners();
   }
 
   /* ================================================================
@@ -146,7 +151,16 @@ export default class AutoSidebarPlugin extends Plugin {
     const el = this.splitEl(side);
     if (!el) return;
 
+    const split = this.splitAPI(side);
     const w = this.widthOf(side);
+
+    // Ensure sidebar is expanded in Obsidian's API before we start
+    // transitioning.  When position:absolute took the sidebar out of
+    // flex flow, Obsidian may have marked the internal sidedock state
+    // as "collapsed" — without expand() here, restoring flex layout
+    // would give the sidebar zero width (only affects the right
+    // sidebar in practice).
+    if (split?.collapsed) split.expand();
 
     // 1) Slide the overlay into view
     el.style.setProperty("width", w + "px", "important");
@@ -225,6 +239,30 @@ export default class AutoSidebarPlugin extends Plugin {
      HOVER DETECTION
      ================================================================ */
 
+  /** Mouse left Obsidian's window entirely — start delayed hide. */
+  private onDocumentLeave = (): void => {
+    for (const side of ["left", "right"] as const) {
+      if (!this.compactState(side)) continue;
+      const el = this.splitEl(side);
+      if (!el?.classList.contains("auto-sidebar-visible")) continue;
+      if (this.leaveTimers[side] !== null) continue;
+      this.leaveTimers[side] = setTimeout(() => {
+        this.concealOverlay(side);
+        this.leaveTimers[side] = null;
+      }, DOC_LEAVE_DELAY_MS);
+    }
+  };
+
+  /** Mouse re-entered the window — cancel pending hide. */
+  private onDocumentEnter = (): void => {
+    this.clearLeaveTimers();
+  };
+
+  /** Window lost focus (Alt+Tab, Win+Tab, Cmd+`) — trigger delayed hide. */
+  private onWindowBlur = (): void => {
+    this.onDocumentLeave();
+  };
+
   private onMouseMove = (e: MouseEvent): void => {
     if (this.leftCompact) this.edgeCheck("left", e.clientX, e.clientY);
     if (this.rightCompact) this.edgeCheck("right", e.clientX, e.clientY);
@@ -273,17 +311,45 @@ export default class AutoSidebarPlugin extends Plugin {
       clearTimeout(this.hideTimers[side]!);
       this.hideTimers[side] = null;
     }
+    if (this.leaveTimers[side] !== null) {
+      clearTimeout(this.leaveTimers[side]!);
+      this.leaveTimers[side] = null;
+    }
+  }
+
+  private clearLeaveTimers(): void {
+    for (const side of ["left", "right"] as const) {
+      if (this.leaveTimers[side] !== null) {
+        clearTimeout(this.leaveTimers[side]!);
+        this.leaveTimers[side] = null;
+      }
+    }
   }
 
   private syncListener(): void {
     const should = this.leftCompact || this.rightCompact;
     if (should && !this.listenerActive) {
       document.addEventListener("mousemove", this.onMouseMove);
+      document.documentElement.addEventListener("mouseleave", this.onDocumentLeave);
+      document.documentElement.addEventListener("mouseenter", this.onDocumentEnter);
+      window.addEventListener("blur", this.onWindowBlur);
       this.listenerActive = true;
     } else if (!should && this.listenerActive) {
       document.removeEventListener("mousemove", this.onMouseMove);
+      document.documentElement.removeEventListener("mouseleave", this.onDocumentLeave);
+      document.documentElement.removeEventListener("mouseenter", this.onDocumentEnter);
+      window.removeEventListener("blur", this.onWindowBlur);
       this.listenerActive = false;
     }
+  }
+
+  private teardownListeners(): void {
+    if (!this.listenerActive) return;
+    document.removeEventListener("mousemove", this.onMouseMove);
+    document.documentElement.removeEventListener("mouseleave", this.onDocumentLeave);
+    document.documentElement.removeEventListener("mouseenter", this.onDocumentEnter);
+    window.removeEventListener("blur", this.onWindowBlur);
+    this.listenerActive = false;
   }
 
   /* ================================================================
