@@ -209,27 +209,23 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
       return;
     const split = this.splitAPI(side);
     const w = this.widthOf(side);
+    el.classList.remove(
+      "auto-sidebar-compact",
+      "auto-sidebar-visible",
+      "auto-sidebar-animate-overlay"
+    );
+    el.style.removeProperty("transition");
     if (split == null ? void 0 : split.collapsed)
       split.expand();
-    el.style.setProperty("width", w + "px", "important");
-    el.classList.add("auto-sidebar-compact");
-    el.classList.add("auto-sidebar-animate-overlay");
-    el.classList.add("auto-sidebar-visible");
-    setTimeout(() => {
-      el.classList.remove("auto-sidebar-animate-overlay");
-      el.style.removeProperty("transition");
-      el.classList.remove("auto-sidebar-compact");
-      el.classList.remove("auto-sidebar-visible");
-      el.style.removeProperty("width");
-      if (this.obsidianWidth[side]) {
-        el.style.width = this.obsidianWidth[side];
-      } else {
-        el.style.width = w + "px";
-      }
-      this.setCompact(side, false);
-      this.persist();
-      this.syncListener();
-    }, SHOW_SPRING_MS);
+    el.style.removeProperty("width");
+    if (this.obsidianWidth[side]) {
+      el.style.width = this.obsidianWidth[side];
+    } else {
+      el.style.width = w + "px";
+    }
+    this.setCompact(side, false);
+    this.persist();
+    this.syncListener();
   }
   revealOverlay(side) {
     const el = this.splitEl(side);
@@ -371,7 +367,8 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     return side === "left" ? this.leftDisabled : this.rightDisabled;
   }
   /** Enable/disable a sidebar.  When enabling disable, the sidebar is exited
-   *  from CM (if active) and collapsed via the Obsidian API. */
+   *  from CM (if active) and collapsed via the Obsidian API.  When disabling
+   *  disable, the sidebar is expanded again so it becomes usable. */
   setDisabled(side, value) {
     if (side === "left")
       this.leftDisabled = value;
@@ -387,6 +384,11 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
         split.collapse();
       }
       this.syncListener();
+    } else {
+      const split = this.splitAPI(side);
+      if (split && split.collapsed) {
+        split.expand();
+      }
     }
     this.persist();
   }
@@ -400,6 +402,9 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     const el = this.splitEl(side);
     if (!el)
       return;
+    const split = this.splitAPI(side);
+    if (split == null ? void 0 : split.collapsed)
+      split.expand();
     el.classList.remove(
       "auto-sidebar-compact",
       "auto-sidebar-visible",

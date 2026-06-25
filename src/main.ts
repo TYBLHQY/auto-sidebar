@@ -176,44 +176,31 @@ export default class AutoSidebarPlugin extends Plugin {
     const split = this.splitAPI(side);
     const w = this.widthOf(side);
 
-    // Ensure sidebar is expanded in Obsidian's API before we start
-    // transitioning.  When position:absolute took the sidebar out of
-    // flex flow, Obsidian may have marked the internal sidedock state
-    // as "collapsed" — without expand() here, restoring flex layout
-    // would give the sidebar zero width (only affects the right
-    // sidebar in practice).
+    // Remove CM positioning FIRST so the sidebar is back in flex flow,
+    // THEN expand via Obsidian API.  Calling split.expand() while the
+    // element is position:absolute doesn't properly set up the flex
+    // item — Obsidian's width gets lost, and the right sidebar ends
+    // up with zero width once the overlay animation completes.
+    el.classList.remove(
+      "auto-sidebar-compact",
+      "auto-sidebar-visible",
+      "auto-sidebar-animate-overlay",
+    );
+    el.style.removeProperty("transition");
+
     if (split?.collapsed) split.expand();
 
-    // 1) Slide the overlay into view
-    el.style.setProperty("width", w + "px", "important");
-    el.classList.add("auto-sidebar-compact");
-    el.classList.add("auto-sidebar-animate-overlay");
-    el.classList.add("auto-sidebar-visible");
+    // Restore width
+    el.style.removeProperty("width");
+    if (this.obsidianWidth[side]) {
+      el.style.width = this.obsidianWidth[side];
+    } else {
+      el.style.width = w + "px";
+    }
 
-    // 2) After slide-in completes, switch back to flex layout
-    setTimeout(() => {
-      el.classList.remove("auto-sidebar-animate-overlay");
-      el.style.removeProperty("transition");
-
-      // Switch from absolute → flex item
-      el.classList.remove("auto-sidebar-compact");
-      el.classList.remove("auto-sidebar-visible");
-
-      // Restore width using the SAME property Obsidian's resize handle sets.
-      // No !important — the user can still drag to resize.
-      el.style.removeProperty("width");
-      if (this.obsidianWidth[side]) {
-        el.style.width = this.obsidianWidth[side];
-      } else {
-        el.style.width = w + "px";
-      }
-      // flex-basis intentionally NOT set — leave it at `auto` so it
-      // reads from `width` and Obsidian's resize handle works.
-
-      this.setCompact(side, false);
-      this.persist();
-      this.syncListener();
-    }, SHOW_SPRING_MS);
+    this.setCompact(side, false);
+    this.persist();
+    this.syncListener();
   }
 
   /* ================================================================
@@ -426,7 +413,8 @@ export default class AutoSidebarPlugin extends Plugin {
   }
 
   /** Enable/disable a sidebar.  When enabling disable, the sidebar is exited
-   *  from CM (if active) and collapsed via the Obsidian API. */
+   *  from CM (if active) and collapsed via the Obsidian API.  When disabling
+   *  disable, the sidebar is expanded again so it becomes usable. */
   public setDisabled(side: "left" | "right", value: boolean): void {
     if (side === "left") this.leftDisabled = value;
     else this.rightDisabled = value;
@@ -445,6 +433,12 @@ export default class AutoSidebarPlugin extends Plugin {
       }
 
       this.syncListener();
+    } else {
+      // Re-enabling sidebar — expand so it becomes visible again
+      const split = this.splitAPI(side);
+      if (split && split.collapsed) {
+        split.expand();
+      }
     }
 
     this.persist();
@@ -458,6 +452,13 @@ export default class AutoSidebarPlugin extends Plugin {
   private cleanupSide(side: "left" | "right"): void {
     const el = this.splitEl(side);
     if (!el) return;
+
+    // Ensure Obsidian sees the sidebar as expanded before we remove our
+    // absolute positioning — otherwise the flex item comes back at zero
+    // width.
+    const split = this.splitAPI(side);
+    if (split?.collapsed) split.expand();
+
     el.classList.remove(
       "auto-sidebar-compact",
       "auto-sidebar-visible",
