@@ -2,8 +2,9 @@
    Auto Sidebar — Zen Browser-style compact mode for Obsidian
    ════════════════════════════════════════════════════════════════ */
 
-/* ── Compact mode base (position: absolute, out of flex flow) ──
-     Fast exit: 0.15s ease for hide/conceal.                       */
+/* ── Compact mode base ──
+     Absolute positioning takes the sidebar out of flex flow.
+     Fast exit: 0.15s ease for hide/conceal.                    */
 
 .workspace-split.mod-left-split.auto-sidebar-compact {
   position: absolute !important;
@@ -12,24 +13,22 @@
   height: 100% !important;
   z-index: var(--layer-sidedock) !important;
   will-change: transform;
-  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.18) !important;
+  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.18);
   pointer-events: none;
   transition: transform 0.15s ease;
 }
 
-/* ── Hidden state (off-screen) ── */
+/* ── Hidden state (offscreen) ── */
 
 .workspace-split.mod-left-split.auto-sidebar-compact:not(.auto-sidebar-visible) {
   transform: translateX(-100%);
 }
 
 /* ── Visible state (overlay, hover-triggered) ──
-     Zen-style entry: slower (0.25s) with a smooth ease-out curve.
-     Asymmetric — this overrides the base rule's fast exit only
-     when .auto-sidebar-visible is present.                     */
+     Zen-style entry: slower (0.25s) with a smooth ease-out curve.  */
 
 .workspace-split.auto-sidebar-compact.auto-sidebar-visible {
-  transform: translateX(0) !important;
+  transform: translateX(0);
   pointer-events: auto;
   transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
