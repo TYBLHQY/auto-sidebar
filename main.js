@@ -30,6 +30,11 @@ module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
 var HOVER_ZONE_PX = 8;
 var HIDE_DELAY_MS = 400;
+var SHOW_SPRING_MS = 250;
+var HIDE_SMOOTH_MS = 150;
+var SIZE_ANIM_MS = 200;
+var SHOW_EASE = "cubic-bezier(0.34, 1.56, 0.64, 1)";
+var HIDE_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
 var AutoSidebarPlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
@@ -42,15 +47,21 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
       left: null,
       right: null
     };
+    /** Obsidian's inline `width` before we overwrite it for overlay. */
+    this.obsidianWidth = { left: "", right: "" };
+    /* ================================================================
+       OVERLAY SHOW / HIDE  (CM only, hover-triggered)
+       ================================================================ */
+    this.showTransition = `transform ${SHOW_SPRING_MS}ms ${SHOW_EASE}`;
+    this.hideTransition = `transform ${HIDE_SMOOTH_MS}ms ${HIDE_EASE}`;
     /* ================================================================
        HOVER DETECTION
        ================================================================ */
     this.onMouseMove = (e) => {
-      const x = e.clientX;
       if (this.leftCompact)
-        this.edgeCheck("left", x, e.clientY);
+        this.edgeCheck("left", e.clientX, e.clientY);
       if (this.rightCompact)
-        this.edgeCheck("right", x, e.clientY);
+        this.edgeCheck("right", e.clientX, e.clientY);
     };
   }
   /* ================================================================
@@ -77,9 +88,9 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     });
     this.app.workspace.onLayoutReady(() => {
       if (this.leftCompact)
-        this.doCompact("left");
+        this.enterCompact("left", true);
       if (this.rightCompact)
-        this.doCompact("right");
+        this.enterCompact("right", true);
     });
   }
   onunload() {
@@ -91,17 +102,16 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
      TOGGLE
      ================================================================ */
   toggle(side) {
-    const compact = this.compactState(side);
-    if (compact) {
+    if (this.compactState(side)) {
       this.uncompact(side);
     } else {
-      this.doCompact(side);
+      this.enterCompact(side, false);
     }
   }
   /* ================================================================
-     ENTER / EXIT COMPACT MODE
+     ENTER COMPACT MODE  (NCM → CM)
      ================================================================ */
-  doCompact(side) {
+  enterCompact(side, instant) {
     const split = this.splitAPI(side);
     if (!split)
       return;
@@ -113,51 +123,91 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
       const w = el.getBoundingClientRect().width;
       if (w > 10)
         this.setWidth(side, w);
-      this.hide(el);
-      this.setCompact(side, true);
-      this.syncListener();
-      this.persist();
+      this.obsidianWidth[side] = el.style.width || "";
+      if (instant) {
+        el.style.setProperty("width", w + "px", "important");
+        el.classList.add("auto-sidebar-compact");
+        this.setCompact(side, true);
+        this.syncListener();
+        this.persist();
+        return;
+      }
+      el.style.flexBasis = w + "px";
+      requestAnimationFrame(() => {
+        el.classList.add("auto-sidebar-animate-size");
+        el.classList.add("auto-sidebar-collapsed");
+        setTimeout(() => {
+          el.classList.remove("auto-sidebar-animate-size");
+          el.classList.remove("auto-sidebar-collapsed");
+          el.style.removeProperty("flex-basis");
+          el.style.removeProperty("min-width");
+          el.style.overflow = "";
+          el.style.setProperty("width", w + "px", "important");
+          el.classList.add("auto-sidebar-compact");
+          this.setCompact(side, true);
+          this.syncListener();
+          this.persist();
+        }, SIZE_ANIM_MS);
+      });
     });
   }
+  /* ================================================================
+     EXIT COMPACT MODE  (CM → NCM)
+     ================================================================ */
   uncompact(side) {
     const el = this.splitEl(side);
-    if (el) {
-      el.classList.remove("auto-sidebar-overlay");
-      this.show(el);
-    }
-    this.setCompact(side, false);
-    this.syncListener();
-    this.persist();
+    if (!el)
+      return;
+    const w = this.widthOf(side);
+    el.style.setProperty("width", w + "px", "important");
+    el.classList.add("auto-sidebar-compact");
+    el.classList.add("auto-sidebar-animate-overlay");
+    el.classList.add("auto-sidebar-visible");
+    setTimeout(() => {
+      el.classList.remove("auto-sidebar-animate-overlay");
+      el.style.removeProperty("transition");
+      el.classList.remove("auto-sidebar-compact");
+      el.classList.remove("auto-sidebar-visible");
+      el.style.removeProperty("width");
+      if (this.obsidianWidth[side]) {
+        el.style.width = this.obsidianWidth[side];
+      } else {
+        el.style.width = w + "px";
+      }
+      this.setCompact(side, false);
+      this.persist();
+      this.syncListener();
+    }, SHOW_SPRING_MS);
   }
-  /* ================================================================
-     OVERLAY SHOW / HIDE (compact-mode only)
-     ================================================================ */
   revealOverlay(side) {
     const el = this.splitEl(side);
-    if (!el || el.classList.contains("auto-sidebar-overlay"))
+    if (!el || el.classList.contains("auto-sidebar-visible"))
       return;
     const split = this.splitAPI(side);
     if (split == null ? void 0 : split.collapsed)
       split.expand();
-    el.style.removeProperty("flex-basis");
-    el.style.removeProperty("min-width");
-    el.style.overflow = "";
-    el.classList.add("auto-sidebar-overlay");
-    const w = this.widthOf(side);
-    el.style.setProperty("width", w + "px", "important");
+    el.style.setProperty("width", this.widthOf(side) + "px", "important");
+    el.classList.add("auto-sidebar-animate-overlay");
+    el.classList.add("auto-sidebar-visible");
+    setTimeout(() => {
+      el.classList.remove("auto-sidebar-animate-overlay");
+    }, SHOW_SPRING_MS + 50);
   }
   concealOverlay(side) {
     const el = this.splitEl(side);
-    if (!el || !el.classList.contains("auto-sidebar-overlay"))
+    if (!el || !el.classList.contains("auto-sidebar-visible"))
       return;
-    el.classList.remove("auto-sidebar-overlay");
-    this.hide(el);
+    el.style.transition = this.hideTransition;
+    el.classList.remove("auto-sidebar-visible");
+    setTimeout(() => {
+      el.style.removeProperty("transition");
+    }, HIDE_SMOOTH_MS + 50);
   }
   edgeCheck(side, x, y) {
     const el = this.splitEl(side);
     if (!el)
       return;
-    const showing = el.classList.contains("auto-sidebar-overlay");
+    const showing = el.classList.contains("auto-sidebar-visible");
     const nearEdge = side === "left" ? x <= HOVER_ZONE_PX : x >= window.innerWidth - HOVER_ZONE_PX;
     if (nearEdge && !showing) {
       this.clearTimer(side);
@@ -199,26 +249,6 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
       document.removeEventListener("mousemove", this.onMouseMove);
       this.listenerActive = false;
     }
-  }
-  /* ================================================================
-     STYLE HELPERS
-     ================================================================ */
-  /** Hide the sidebar — only flex-basis & min-width, never touch width.
-   *  Obsidian's resize handle sets `width` via setSize() internally.
-   *  In flex row layout, flex-basis overrides width, so setting
-   *  flex-basis to 0 is enough to collapse it while preserving the
-   *  original width value for NCM restore. */
-  hide(el) {
-    el.style.setProperty("flex-basis", "0px", "important");
-    el.style.setProperty("min-width", "0px", "important");
-    el.style.overflow = "hidden";
-  }
-  /** Restore the sidebar to NCM — remove our overrides, let Obsidian's
-   *  inline width (from setSize) apply naturally. */
-  show(el) {
-    el.style.removeProperty("flex-basis");
-    el.style.removeProperty("min-width");
-    el.style.overflow = "";
   }
   /* ================================================================
      PERSISTENCE
@@ -264,10 +294,20 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     const el = this.splitEl(side);
     if (!el)
       return;
-    el.classList.remove("auto-sidebar-overlay");
+    el.classList.remove(
+      "auto-sidebar-compact",
+      "auto-sidebar-visible",
+      "auto-sidebar-animate-overlay",
+      "auto-sidebar-animate-size",
+      "auto-sidebar-collapsed"
+    );
     el.style.removeProperty("width");
+    if (this.obsidianWidth[side]) {
+      el.style.width = this.obsidianWidth[side];
+    }
     el.style.removeProperty("flex-basis");
     el.style.removeProperty("min-width");
+    el.style.removeProperty("transition");
     el.style.overflow = "";
   }
 };
