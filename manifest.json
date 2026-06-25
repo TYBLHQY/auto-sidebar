@@ -1,0 +1,11 @@
+{
+  "id": "auto-sidebar",
+  "name": "Auto Sidebar",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Zen Browser-style compact mode for Obsidian sidebars.",
+  "author": "",
+  "authorUrl": "",
+  "fundingUrl": "",
+  "isDesktopOnly": false
+}

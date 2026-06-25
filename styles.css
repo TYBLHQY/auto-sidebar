@@ -1,0 +1,21 @@
+/* ── Floating overlay (compact mode) ──────────────────────────── */
+
+.workspace-split.mod-left-split.auto-sidebar-overlay {
+  position: absolute !important;
+  left: var(--ribbon-width, 44px) !important;
+  top: 0 !important;
+  height: 100% !important;
+  z-index: var(--layer-sidedock) !important;
+  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.18) !important;
+  pointer-events: auto !important;
+}
+
+.workspace-split.mod-right-split.auto-sidebar-overlay {
+  position: absolute !important;
+  right: 0 !important;
+  top: 0 !important;
+  height: 100% !important;
+  z-index: var(--layer-sidedock) !important;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.18) !important;
+  pointer-events: auto !important;
+}
