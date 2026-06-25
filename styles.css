@@ -15,37 +15,13 @@
   pointer-events: none;
 }
 
-.workspace-split.mod-right-split.auto-sidebar-compact {
-  position: absolute !important;
-  right: 0 !important;
-  top: 0 !important;
-  height: 100% !important;
-  z-index: var(--layer-sidedock) !important;
-  will-change: transform;
-  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.18) !important;
-  pointer-events: none;
-}
-
 /* ── Overlay hidden / visible (transform-based, no layout shift) ── */
 
 .workspace-split.mod-left-split.auto-sidebar-compact:not(.auto-sidebar-visible) {
   transform: translateX(-100%);
 }
 
-.workspace-split.mod-right-split.auto-sidebar-compact:not(.auto-sidebar-visible) {
-  transform: translateX(100%);
-}
-
 .workspace-split.auto-sidebar-compact.auto-sidebar-visible {
   transform: translateX(0) !important;
   pointer-events: auto;
-}
-
-/* ════════════════════════════════════════════════════════════════
-   Scrollbar lock — right sidebar overlay hides main scrollbar
-   ════════════════════════════════════════════════════════════════ */
-
-body.auto-sidebar-right-overlay .workspace-split.mod-root .view-content,
-body.auto-sidebar-right-overlay .workspace-split.mod-root .cm-scroller {
-  overflow: hidden !important;
 }

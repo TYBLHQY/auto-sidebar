@@ -2,11 +2,8 @@ import { App, Plugin, PluginSettingTab, Setting } from "obsidian";
 
 interface Store {
   leftCompact: boolean;
-  rightCompact: boolean;
   leftWidth: number;
-  rightWidth: number;
   leftDisabled: boolean;
-  rightDisabled: boolean;
 }
 
 const HOVER_ZONE_PX = 8;
@@ -15,25 +12,15 @@ const DOC_LEAVE_DELAY_MS = 1000; // toolbar-hide-after-hover.duration (Zen defau
 
 export default class AutoSidebarPlugin extends Plugin {
   private leftCompact = false;
-  private rightCompact = false;
   private leftWidth = 270;
-  private rightWidth = 270;
-
   /** Disabled — sidebar stays permanently collapsed/unexpandable */
   private leftDisabled = false;
-  private rightDisabled = false;
 
   private listenerActive = false;
-  private hideTimers: Record<string, ReturnType<typeof setTimeout> | null> = {
-    left: null,
-    right: null,
-  };
-  private leaveTimers: Record<string, ReturnType<typeof setTimeout> | null> = {
-    left: null,
-    right: null,
-  };
+  private hideTimer: ReturnType<typeof setTimeout> | null = null;
+  private leaveTimer: ReturnType<typeof setTimeout> | null = null;
   /** Obsidian's inline `width` before we overwrite it for overlay. */
-  private obsidianWidth: Record<string, string> = { left: "", right: "" };
+  private obsidianWidth = "";
 
   /* ================================================================
      LIFECYCLE
@@ -43,66 +30,48 @@ export default class AutoSidebarPlugin extends Plugin {
     const data = await this.loadData();
     if (data) {
       this.leftCompact = (data as Store).leftCompact ?? false;
-      this.rightCompact = (data as Store).rightCompact ?? false;
       this.leftWidth = (data as Store).leftWidth ?? 270;
-      this.rightWidth = (data as Store).rightWidth ?? 270;
       this.leftDisabled = (data as Store).leftDisabled ?? false;
-      this.rightDisabled = (data as Store).rightDisabled ?? false;
     }
 
     this.addSettingTab(new AutoSidebarSettingTab(this.app, this));
 
     this.addCommand({
       id: "toggle-left-compact",
-      name: "Toggle left compact mode",
-      callback: () => this.toggle("left"),
-    });
-    this.addCommand({
-      id: "toggle-right-compact",
-      name: "Toggle right compact mode",
-      callback: () => this.toggle("right"),
+      name: "Toggle compact mode",
+      callback: () => this.toggle(),
     });
 
     this.app.workspace.onLayoutReady(() => {
-      // On startup we expand both sidebars so the DOM element exists,
-      // then restore CM using the SAVED width — NOT the measured DOM
-      // width.  At this point the right sidebar's DOM may not have its
-      // final layout yet (width = 0), so measuring it would cause the
-      // restore to be skipped.
-      const tryRestoreCompact = (side: "left" | "right"): void => {
-        if (this.disabledState(side) || !this.compactState(side)) return;
-        const split = this.splitAPI(side);
-        if (!split) return;
-        split.expand();
-        requestAnimationFrame(() => {
-          const el = this.splitEl(side);
-          if (!el) return;
-          this.obsidianWidth[side] = el.style.width || "";
-          el.style.setProperty("width", this.widthOf(side) + "px", "important");
-          el.classList.add("auto-sidebar-compact");
-          this.setCompact(side, true);
-          this.syncListener();
-          this.persist();
-        });
-      };
-      tryRestoreCompact("left");
-      tryRestoreCompact("right");
+      // Restore CM at startup using the SAVED width — the DOM may not
+      // have its final layout yet, so measuring it would be unreliable.
+      if (!this.leftDisabled && this.leftCompact) {
+        const split = this.splitAPI();
+        if (split) {
+          split.expand();
+          requestAnimationFrame(() => {
+            const el = this.splitEl();
+            if (!el) return;
+            this.obsidianWidth = el.style.width || "";
+            el.style.setProperty("width", this.leftWidth + "px", "important");
+            el.classList.add("auto-sidebar-compact");
+            this.leftCompact = true;
+            this.syncListener();
+            this.persist();
+          });
+        }
+      }
 
       // If disabled, ensure sidebar is collapsed via Obsidian API
       if (this.leftDisabled) {
-        const split = this.splitAPI("left");
-        if (split && !split.collapsed) split.collapse();
-      }
-      if (this.rightDisabled) {
-        const split = this.splitAPI("right");
+        const split = this.splitAPI();
         if (split && !split.collapsed) split.collapse();
       }
     });
   }
 
   onunload(): void {
-    this.cleanupSide("left");
-    this.cleanupSide("right");
+    this.cleanupSide();
     this.teardownListeners();
   }
 
@@ -110,12 +79,12 @@ export default class AutoSidebarPlugin extends Plugin {
      TOGGLE
      ================================================================ */
 
-  private toggle(side: "left" | "right"): void {
-    if (this.disabledState(side)) return;
-    if (this.compactState(side)) {
-      this.uncompact(side);
+  private toggle(): void {
+    if (this.leftDisabled) return;
+    if (this.leftCompact) {
+      this.uncompact();
     } else {
-      this.enterCompact(side);
+      this.enterCompact();
     }
   }
 
@@ -123,14 +92,14 @@ export default class AutoSidebarPlugin extends Plugin {
      ENTER COMPACT MODE  (NCM → CM)
      ================================================================ */
 
-  private enterCompact(side: "left" | "right"): void {
-    if (this.disabledState(side)) return;
-    const split = this.splitAPI(side);
+  private enterCompact(): void {
+    if (this.leftDisabled) return;
+    const split = this.splitAPI();
     if (!split) return;
     split.expand();
 
     requestAnimationFrame(() => {
-      const el = this.splitEl(side);
+      const el = this.splitEl();
       if (!el) return;
 
       const w = el.getBoundingClientRect().width;
@@ -139,19 +108,19 @@ export default class AutoSidebarPlugin extends Plugin {
       // via Obsidian API).  Don't enter CM — doing so puts the sidebar
       // in a broken state where the toggle can't recover.
       if (w <= 10) {
-        this.setCompact(side, false);
+        this.leftCompact = false;
         this.persist();
         return;
       }
 
-      this.setWidth(side, w);
+      this.leftWidth = w;
 
       // Save Obsidian's inline width before we overwrite it
-      this.obsidianWidth[side] = el.style.width || "";
+      this.obsidianWidth = el.style.width || "";
 
       el.style.setProperty("width", w + "px", "important");
       el.classList.add("auto-sidebar-compact");
-      this.setCompact(side, true);
+      this.leftCompact = true;
       this.syncListener();
       this.persist();
     });
@@ -161,18 +130,17 @@ export default class AutoSidebarPlugin extends Plugin {
      EXIT COMPACT MODE  (CM → NCM)
      ================================================================ */
 
-  private uncompact(side: "left" | "right"): void {
-    const el = this.splitEl(side);
+  private uncompact(): void {
+    const el = this.splitEl();
     if (!el) return;
 
-    const split = this.splitAPI(side);
-    const w = this.widthOf(side);
+    const split = this.splitAPI();
+    const w = this.leftWidth;
 
     // Remove CM positioning FIRST so the sidebar is back in flex flow,
-    // THEN expand via Obsidian API.  Always expand (not just when
-    // split.collapsed) — if CM left the sidebar in an intermediate
-    // state, collapsed may be false while the flex item still has
-    // zero width.
+    // THEN expand via Obsidian API.  Always expand — if CM left the
+    // sidebar in an intermediate state, collapsed may be false while
+    // the flex item still has zero width.
     el.classList.remove(
       "auto-sidebar-compact",
       "auto-sidebar-visible",
@@ -181,13 +149,13 @@ export default class AutoSidebarPlugin extends Plugin {
 
     // Restore width
     el.style.removeProperty("width");
-    if (this.obsidianWidth[side]) {
-      el.style.width = this.obsidianWidth[side];
+    if (this.obsidianWidth) {
+      el.style.width = this.obsidianWidth;
     } else {
       el.style.width = w + "px";
     }
 
-    this.setCompact(side, false);
+    this.leftCompact = false;
     this.persist();
     this.syncListener();
   }
@@ -196,31 +164,22 @@ export default class AutoSidebarPlugin extends Plugin {
      OVERLAY SHOW / HIDE  (CM only, hover-triggered, no animation)
      ================================================================ */
 
-  private revealOverlay(side: "left" | "right"): void {
-    const el = this.splitEl(side);
+  private revealOverlay(): void {
+    const el = this.splitEl();
     if (!el || el.classList.contains("auto-sidebar-visible")) return;
 
-    const split = this.splitAPI(side);
+    const split = this.splitAPI();
     if (split?.collapsed) split.expand();
 
-    el.style.setProperty("width", this.widthOf(side) + "px", "important");
+    el.style.setProperty("width", this.leftWidth + "px", "important");
     el.classList.add("auto-sidebar-visible");
-
-    // When right sidebar overlay shows, lock the main content scrollbar
-    if (side === "right") {
-      document.body.classList.add("auto-sidebar-right-overlay");
-    }
   }
 
-  private concealOverlay(side: "left" | "right"): void {
-    const el = this.splitEl(side);
+  private concealOverlay(): void {
+    const el = this.splitEl();
     if (!el || !el.classList.contains("auto-sidebar-visible")) return;
 
     el.classList.remove("auto-sidebar-visible");
-
-    if (side === "right") {
-      document.body.classList.remove("auto-sidebar-right-overlay");
-    }
   }
 
   /* ================================================================
@@ -229,21 +188,22 @@ export default class AutoSidebarPlugin extends Plugin {
 
   /** Mouse left Obsidian's window entirely — start delayed hide. */
   private onDocumentLeave = (): void => {
-    for (const side of ["left", "right"] as const) {
-      if (!this.compactState(side)) continue;
-      const el = this.splitEl(side);
-      if (!el?.classList.contains("auto-sidebar-visible")) continue;
-      if (this.leaveTimers[side] !== null) continue;
-      this.leaveTimers[side] = setTimeout(() => {
-        this.concealOverlay(side);
-        this.leaveTimers[side] = null;
-      }, DOC_LEAVE_DELAY_MS);
-    }
+    if (!this.leftCompact) return;
+    const el = this.splitEl();
+    if (!el?.classList.contains("auto-sidebar-visible")) return;
+    if (this.leaveTimer !== null) return;
+    this.leaveTimer = setTimeout(() => {
+      this.concealOverlay();
+      this.leaveTimer = null;
+    }, DOC_LEAVE_DELAY_MS);
   };
 
   /** Mouse re-entered the window — cancel pending hide. */
   private onDocumentEnter = (): void => {
-    this.clearLeaveTimers();
+    if (this.leaveTimer !== null) {
+      clearTimeout(this.leaveTimer);
+      this.leaveTimer = null;
+    }
   };
 
   /** Window lost focus (Alt+Tab, Win+Tab, Cmd+`) — trigger delayed hide. */
@@ -252,33 +212,29 @@ export default class AutoSidebarPlugin extends Plugin {
   };
 
   private onMouseMove = (e: MouseEvent): void => {
-    if (this.leftCompact) this.edgeCheck("left", e.clientX, e.clientY);
-    if (this.rightCompact) this.edgeCheck("right", e.clientX, e.clientY);
+    if (this.leftCompact) this.edgeCheck(e.clientX, e.clientY);
   };
 
-  private edgeCheck(side: "left" | "right", x: number, y: number): void {
-    if (this.disabledState(side)) return;
-    const el = this.splitEl(side);
+  private edgeCheck(x: number, y: number): void {
+    if (this.leftDisabled) return;
+    const el = this.splitEl();
     if (!el) return;
 
     const showing = el.classList.contains("auto-sidebar-visible");
-    const nearEdge =
-      side === "left"
-        ? x <= HOVER_ZONE_PX
-        : x >= window.innerWidth - HOVER_ZONE_PX;
+    const nearEdge = x <= HOVER_ZONE_PX;
 
     if (nearEdge && !showing) {
-      this.clearTimer(side);
-      this.revealOverlay(side);
+      this.clearTimer();
+      this.revealOverlay();
       return;
     }
 
     if (!showing) return;
 
     if (this.pointerIn(el, x, y)) {
-      this.clearTimer(side);
+      this.clearTimer();
     } else if (!nearEdge) {
-      this.startTimer(side);
+      this.startTimer();
     }
   }
 
@@ -287,43 +243,33 @@ export default class AutoSidebarPlugin extends Plugin {
     return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
   }
 
-  private startTimer(side: "left" | "right"): void {
-    if (this.hideTimers[side] !== null) return;
-    this.hideTimers[side] = setTimeout(() => {
-      this.concealOverlay(side);
-      this.hideTimers[side] = null;
+  private startTimer(): void {
+    if (this.hideTimer !== null) return;
+    this.hideTimer = setTimeout(() => {
+      this.concealOverlay();
+      this.hideTimer = null;
     }, HIDE_DELAY_MS);
   }
 
-  private clearTimer(side: "left" | "right"): void {
-    if (this.hideTimers[side] !== null) {
-      clearTimeout(this.hideTimers[side]!);
-      this.hideTimers[side] = null;
+  private clearTimer(): void {
+    if (this.hideTimer !== null) {
+      clearTimeout(this.hideTimer);
+      this.hideTimer = null;
     }
-    if (this.leaveTimers[side] !== null) {
-      clearTimeout(this.leaveTimers[side]!);
-      this.leaveTimers[side] = null;
-    }
-  }
-
-  private clearLeaveTimers(): void {
-    for (const side of ["left", "right"] as const) {
-      if (this.leaveTimers[side] !== null) {
-        clearTimeout(this.leaveTimers[side]!);
-        this.leaveTimers[side] = null;
-      }
+    if (this.leaveTimer !== null) {
+      clearTimeout(this.leaveTimer);
+      this.leaveTimer = null;
     }
   }
 
   private syncListener(): void {
-    const should = this.leftCompact || this.rightCompact;
-    if (should && !this.listenerActive) {
+    if (this.leftCompact && !this.listenerActive) {
       document.addEventListener("mousemove", this.onMouseMove);
       document.documentElement.addEventListener("mouseleave", this.onDocumentLeave);
       document.documentElement.addEventListener("mouseenter", this.onDocumentEnter);
       window.addEventListener("blur", this.onWindowBlur);
       this.listenerActive = true;
-    } else if (!should && this.listenerActive) {
+    } else if (!this.leftCompact && this.listenerActive) {
       document.removeEventListener("mousemove", this.onMouseMove);
       document.documentElement.removeEventListener("mouseleave", this.onDocumentLeave);
       document.documentElement.removeEventListener("mouseenter", this.onDocumentEnter);
@@ -348,11 +294,8 @@ export default class AutoSidebarPlugin extends Plugin {
   private persist(): void {
     this.saveData({
       leftCompact: this.leftCompact,
-      rightCompact: this.rightCompact,
       leftWidth: this.leftWidth,
-      rightWidth: this.rightWidth,
       leftDisabled: this.leftDisabled,
-      rightDisabled: this.rightDisabled,
     } as Store);
   }
 
@@ -360,50 +303,29 @@ export default class AutoSidebarPlugin extends Plugin {
      HELPERS
      ================================================================ */
 
-  private splitAPI(side: "left" | "right"): any {
-    return side === "left"
-      ? (this.app.workspace as any).leftSplit
-      : (this.app.workspace as any).rightSplit;
+  private splitAPI(): any {
+    return (this.app.workspace as any).leftSplit;
   }
 
-  private splitEl(side: "left" | "right"): HTMLElement | null {
-    const split = this.splitAPI(side);
-    return split?.containerEl ?? null;
+  private splitEl(): HTMLElement | null {
+    return (this.splitAPI() as any)?.containerEl ?? null;
   }
 
-  private widthOf(side: "left" | "right"): number {
-    return side === "left" ? this.leftWidth : this.rightWidth;
-  }
-
-  private setWidth(side: "left" | "right", w: number): void {
-    if (side === "left") this.leftWidth = w;
-    else this.rightWidth = w;
-  }
-
-  private compactState(side: "left" | "right"): boolean {
-    return side === "left" ? this.leftCompact : this.rightCompact;
-  }
-
-  private disabledState(side: "left" | "right"): boolean {
-    return side === "left" ? this.leftDisabled : this.rightDisabled;
-  }
-
-  /** Enable/disable a sidebar.  When enabling disable, the sidebar is exited
-   *  from CM (if active) and collapsed via the Obsidian API.  When disabling
-   *  disable, the sidebar is expanded again so it becomes usable. */
-  public setDisabled(side: "left" | "right", value: boolean): void {
-    if (side === "left") this.leftDisabled = value;
-    else this.rightDisabled = value;
+  /** Enable/disable the sidebar.  When enabling disable, the sidebar is
+   *  exited from CM (if active) and collapsed via the Obsidian API.  When
+   *  disabling disable, the sidebar is expanded again. */
+  public setDisabled(value: boolean): void {
+    this.leftDisabled = value;
 
     if (value) {
       // Exit CM immediately if active
-      if (this.compactState(side)) {
-        this.cleanupSide(side);
-        this.setCompact(side, false);
+      if (this.leftCompact) {
+        this.cleanupSide();
+        this.leftCompact = false;
       }
 
       // Collapse via Obsidian API — keeps sidebar closed in NCM
-      const split = this.splitAPI(side);
+      const split = this.splitAPI();
       if (split && !split.collapsed) {
         split.collapse();
       }
@@ -411,7 +333,7 @@ export default class AutoSidebarPlugin extends Plugin {
       this.syncListener();
     } else {
       // Re-enabling sidebar — expand so it becomes visible again
-      const split = this.splitAPI(side);
+      const split = this.splitAPI();
       if (split && split.collapsed) {
         split.expand();
       }
@@ -420,33 +342,23 @@ export default class AutoSidebarPlugin extends Plugin {
     this.persist();
   }
 
-  private setCompact(side: "left" | "right", v: boolean): void {
-    if (side === "left") this.leftCompact = v;
-    else this.rightCompact = v;
-  }
-
-  private cleanupSide(side: "left" | "right"): void {
-    const el = this.splitEl(side);
+  private cleanupSide(): void {
+    const el = this.splitEl();
     if (!el) return;
 
     // Ensure Obsidian sees the sidebar as expanded before we remove our
     // absolute positioning — otherwise the flex item comes back at zero
     // width.
-    const split = this.splitAPI(side);
+    const split = this.splitAPI();
     if (split?.collapsed) split.expand();
-
-    // Unlock scrollbar if overlay was visible during cleanup
-    if (side === "right") {
-      document.body.classList.remove("auto-sidebar-right-overlay");
-    }
 
     el.classList.remove(
       "auto-sidebar-compact",
       "auto-sidebar-visible",
     );
     el.style.removeProperty("width");
-    if (this.obsidianWidth[side]) {
-      el.style.width = this.obsidianWidth[side];
+    if (this.obsidianWidth) {
+      el.style.width = this.obsidianWidth;
     }
     el.style.removeProperty("flex-basis");
     el.style.removeProperty("min-width");
@@ -472,7 +384,7 @@ class AutoSidebarSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     new Setting(containerEl)
-      .setName("Disable left sidebar")
+      .setName("Disable sidebar")
       .setDesc(
         "Keep left sidebar permanently collapsed. Keyboard shortcuts, hover, and CM transitions will not expand it.",
       )
@@ -480,20 +392,7 @@ class AutoSidebarSettingTab extends PluginSettingTab {
         toggle
           .setValue(this.plugin["leftDisabled"])
           .onChange((value) => {
-            this.plugin.setDisabled("left", value);
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Disable right sidebar")
-      .setDesc(
-        "Keep right sidebar permanently collapsed. Keyboard shortcuts, hover, and CM transitions will not expand it.",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin["rightDisabled"])
-          .onChange((value) => {
-            this.plugin.setDisabled("right", value);
+            this.plugin.setDisabled(value);
           }),
       );
   }
