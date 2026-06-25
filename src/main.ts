@@ -12,14 +12,6 @@ interface Store {
 const HOVER_ZONE_PX = 8;
 const HIDE_DELAY_MS = 150;      // sidebar-keep-hover.duration (Zen default 150)
 const DOC_LEAVE_DELAY_MS = 1000; // toolbar-hide-after-hover.duration (Zen default 1000)
-const SHOW_SPRING_MS = 250;
-const HIDE_SMOOTH_MS = 150;
-const SIZE_ANIM_MS = 200;
-
-/** Overshoot spring for reveal (peak ~101%, Zen‑style) */
-const SHOW_EASE = "cubic-bezier(0.34, 1.56, 0.64, 1)";
-/** Smooth ease-out for hide */
-const HIDE_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
 
 export default class AutoSidebarPlugin extends Plugin {
   private leftCompact = false;
@@ -72,9 +64,32 @@ export default class AutoSidebarPlugin extends Plugin {
     });
 
     this.app.workspace.onLayoutReady(() => {
-      // On startup: restore CM instantly without animation
-      if (!this.leftDisabled && this.leftCompact) this.enterCompact("left", true);
-      if (!this.rightDisabled && this.rightCompact) this.enterCompact("right", true);
+      // On startup: restore CM only if the sidebar has a real DOM width.
+      // At this point Obsidian may not have fully laid out side docks,
+      // and entering CM with 0 width puts the sidebar in a broken state
+      // where the toggle can't recover from it.
+      const tryRestore = (side: "left" | "right"): void => {
+        if (this.disabledState(side)) return;
+        if (!this.compactState(side)) return;
+        const split = this.splitAPI(side);
+        if (!split) return;
+        split.expand();
+        requestAnimationFrame(() => {
+          const el = this.splitEl(side);
+          if (!el) return;
+          const w = el.getBoundingClientRect().width;
+          if (w > 10) {
+            this.enterCompact(side);
+          } else {
+            // Sidebar isn't laid out yet — reset state so the user
+            // can toggle normally.
+            this.setCompact(side, false);
+            this.persist();
+          }
+        });
+      };
+      tryRestore("left");
+      tryRestore("right");
 
       // If disabled, ensure sidebar is collapsed via Obsidian API
       if (this.leftDisabled) {
@@ -103,7 +118,7 @@ export default class AutoSidebarPlugin extends Plugin {
     if (this.compactState(side)) {
       this.uncompact(side);
     } else {
-      this.enterCompact(side, false);
+      this.enterCompact(side);
     }
   }
 
@@ -111,7 +126,7 @@ export default class AutoSidebarPlugin extends Plugin {
      ENTER COMPACT MODE  (NCM → CM)
      ================================================================ */
 
-  private enterCompact(side: "left" | "right", instant: boolean): void {
+  private enterCompact(side: "left" | "right"): void {
     if (this.disabledState(side)) return;
     const split = this.splitAPI(side);
     if (!split) return;
@@ -127,41 +142,11 @@ export default class AutoSidebarPlugin extends Plugin {
       // Save Obsidian's inline width before we overwrite it
       this.obsidianWidth[side] = el.style.width || "";
 
-      if (instant) {
-        el.style.setProperty("width", w + "px", "important");
-        el.classList.add("auto-sidebar-compact");
-        this.setCompact(side, true);
-        this.syncListener();
-        this.persist();
-        return;
-      }
-
-      // ── Animated: flex-basis shrink → absolute positioning ──
-
-      // 1) Make flex-basis explicit so the browser can interpolate
-      el.style.flexBasis = w + "px";
-
-      // 2) Next frame: start shrink animation
-      requestAnimationFrame(() => {
-        el.classList.add("auto-sidebar-animate-size");
-        el.classList.add("auto-sidebar-collapsed");
-
-        // 3) After shrink completes, switch to absolute positioning
-        setTimeout(() => {
-          el.classList.remove("auto-sidebar-animate-size");
-          el.classList.remove("auto-sidebar-collapsed");
-          el.style.removeProperty("flex-basis");
-          el.style.removeProperty("min-width");
-          el.style.overflow = "";
-
-          el.style.setProperty("width", w + "px", "important");
-          el.classList.add("auto-sidebar-compact");
-
-          this.setCompact(side, true);
-          this.syncListener();
-          this.persist();
-        }, SIZE_ANIM_MS);
-      });
+      el.style.setProperty("width", w + "px", "important");
+      el.classList.add("auto-sidebar-compact");
+      this.setCompact(side, true);
+      this.syncListener();
+      this.persist();
     });
   }
 
@@ -177,18 +162,15 @@ export default class AutoSidebarPlugin extends Plugin {
     const w = this.widthOf(side);
 
     // Remove CM positioning FIRST so the sidebar is back in flex flow,
-    // THEN expand via Obsidian API.  Calling split.expand() while the
-    // element is position:absolute doesn't properly set up the flex
-    // item — Obsidian's width gets lost, and the right sidebar ends
-    // up with zero width once the overlay animation completes.
+    // THEN expand via Obsidian API.  Always expand (not just when
+    // split.collapsed) — if CM left the sidebar in an intermediate
+    // state, collapsed may be false while the flex item still has
+    // zero width.
     el.classList.remove(
       "auto-sidebar-compact",
       "auto-sidebar-visible",
-      "auto-sidebar-animate-overlay",
     );
-    el.style.removeProperty("transition");
-
-    if (split?.collapsed) split.expand();
+    split?.expand();
 
     // Restore width
     el.style.removeProperty("width");
@@ -204,11 +186,8 @@ export default class AutoSidebarPlugin extends Plugin {
   }
 
   /* ================================================================
-     OVERLAY SHOW / HIDE  (CM only, hover-triggered)
+     OVERLAY SHOW / HIDE  (CM only, hover-triggered, no animation)
      ================================================================ */
-
-  private readonly showTransition = `transform ${SHOW_SPRING_MS}ms ${SHOW_EASE}`;
-  private readonly hideTransition = `transform ${HIDE_SMOOTH_MS}ms ${HIDE_EASE}`;
 
   private revealOverlay(side: "left" | "right"): void {
     const el = this.splitEl(side);
@@ -217,31 +196,24 @@ export default class AutoSidebarPlugin extends Plugin {
     const split = this.splitAPI(side);
     if (split?.collapsed) split.expand();
 
-    // Ensure width is correct
     el.style.setProperty("width", this.widthOf(side) + "px", "important");
-
-    // Trigger overlay slide-in with springy easing
-    el.classList.add("auto-sidebar-animate-overlay");
     el.classList.add("auto-sidebar-visible");
 
-    // Clean up after animation
-    setTimeout(() => {
-      el.classList.remove("auto-sidebar-animate-overlay");
-    }, SHOW_SPRING_MS + 50);
+    // When right sidebar overlay shows, lock the main content scrollbar
+    if (side === "right") {
+      document.body.classList.add("auto-sidebar-right-overlay");
+    }
   }
 
   private concealOverlay(side: "left" | "right"): void {
     const el = this.splitEl(side);
     if (!el || !el.classList.contains("auto-sidebar-visible")) return;
 
-    // Override transition for smooth hide (different easing from show)
-    el.style.transition = this.hideTransition;
     el.classList.remove("auto-sidebar-visible");
 
-    // Clean up after animation
-    setTimeout(() => {
-      el.style.removeProperty("transition");
-    }, HIDE_SMOOTH_MS + 50);
+    if (side === "right") {
+      document.body.classList.remove("auto-sidebar-right-overlay");
+    }
   }
 
   /* ================================================================
@@ -459,12 +431,14 @@ export default class AutoSidebarPlugin extends Plugin {
     const split = this.splitAPI(side);
     if (split?.collapsed) split.expand();
 
+    // Unlock scrollbar if overlay was visible during cleanup
+    if (side === "right") {
+      document.body.classList.remove("auto-sidebar-right-overlay");
+    }
+
     el.classList.remove(
       "auto-sidebar-compact",
       "auto-sidebar-visible",
-      "auto-sidebar-animate-overlay",
-      "auto-sidebar-animate-size",
-      "auto-sidebar-collapsed",
     );
     el.style.removeProperty("width");
     if (this.obsidianWidth[side]) {

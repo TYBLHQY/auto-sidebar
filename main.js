@@ -31,11 +31,6 @@ var import_obsidian = require("obsidian");
 var HOVER_ZONE_PX = 8;
 var HIDE_DELAY_MS = 150;
 var DOC_LEAVE_DELAY_MS = 1e3;
-var SHOW_SPRING_MS = 250;
-var HIDE_SMOOTH_MS = 150;
-var SIZE_ANIM_MS = 200;
-var SHOW_EASE = "cubic-bezier(0.34, 1.56, 0.64, 1)";
-var HIDE_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
 var AutoSidebarPlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
@@ -57,11 +52,6 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     };
     /** Obsidian's inline `width` before we overwrite it for overlay. */
     this.obsidianWidth = { left: "", right: "" };
-    /* ================================================================
-       OVERLAY SHOW / HIDE  (CM only, hover-triggered)
-       ================================================================ */
-    this.showTransition = `transform ${SHOW_SPRING_MS}ms ${SHOW_EASE}`;
-    this.hideTransition = `transform ${HIDE_SMOOTH_MS}ms ${HIDE_EASE}`;
     /* ================================================================
        HOVER DETECTION
        ================================================================ */
@@ -122,10 +112,30 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
       callback: () => this.toggle("right")
     });
     this.app.workspace.onLayoutReady(() => {
-      if (!this.leftDisabled && this.leftCompact)
-        this.enterCompact("left", true);
-      if (!this.rightDisabled && this.rightCompact)
-        this.enterCompact("right", true);
+      const tryRestore = (side) => {
+        if (this.disabledState(side))
+          return;
+        if (!this.compactState(side))
+          return;
+        const split = this.splitAPI(side);
+        if (!split)
+          return;
+        split.expand();
+        requestAnimationFrame(() => {
+          const el = this.splitEl(side);
+          if (!el)
+            return;
+          const w = el.getBoundingClientRect().width;
+          if (w > 10) {
+            this.enterCompact(side);
+          } else {
+            this.setCompact(side, false);
+            this.persist();
+          }
+        });
+      };
+      tryRestore("left");
+      tryRestore("right");
       if (this.leftDisabled) {
         const split = this.splitAPI("left");
         if (split && !split.collapsed)
@@ -152,13 +162,13 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     if (this.compactState(side)) {
       this.uncompact(side);
     } else {
-      this.enterCompact(side, false);
+      this.enterCompact(side);
     }
   }
   /* ================================================================
      ENTER COMPACT MODE  (NCM → CM)
      ================================================================ */
-  enterCompact(side, instant) {
+  enterCompact(side) {
     if (this.disabledState(side))
       return;
     const split = this.splitAPI(side);
@@ -173,31 +183,11 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
       if (w > 10)
         this.setWidth(side, w);
       this.obsidianWidth[side] = el.style.width || "";
-      if (instant) {
-        el.style.setProperty("width", w + "px", "important");
-        el.classList.add("auto-sidebar-compact");
-        this.setCompact(side, true);
-        this.syncListener();
-        this.persist();
-        return;
-      }
-      el.style.flexBasis = w + "px";
-      requestAnimationFrame(() => {
-        el.classList.add("auto-sidebar-animate-size");
-        el.classList.add("auto-sidebar-collapsed");
-        setTimeout(() => {
-          el.classList.remove("auto-sidebar-animate-size");
-          el.classList.remove("auto-sidebar-collapsed");
-          el.style.removeProperty("flex-basis");
-          el.style.removeProperty("min-width");
-          el.style.overflow = "";
-          el.style.setProperty("width", w + "px", "important");
-          el.classList.add("auto-sidebar-compact");
-          this.setCompact(side, true);
-          this.syncListener();
-          this.persist();
-        }, SIZE_ANIM_MS);
-      });
+      el.style.setProperty("width", w + "px", "important");
+      el.classList.add("auto-sidebar-compact");
+      this.setCompact(side, true);
+      this.syncListener();
+      this.persist();
     });
   }
   /* ================================================================
@@ -211,12 +201,9 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     const w = this.widthOf(side);
     el.classList.remove(
       "auto-sidebar-compact",
-      "auto-sidebar-visible",
-      "auto-sidebar-animate-overlay"
+      "auto-sidebar-visible"
     );
-    el.style.removeProperty("transition");
-    if (split == null ? void 0 : split.collapsed)
-      split.expand();
+    split == null ? void 0 : split.expand();
     el.style.removeProperty("width");
     if (this.obsidianWidth[side]) {
       el.style.width = this.obsidianWidth[side];
@@ -227,6 +214,9 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     this.persist();
     this.syncListener();
   }
+  /* ================================================================
+     OVERLAY SHOW / HIDE  (CM only, hover-triggered, no animation)
+     ================================================================ */
   revealOverlay(side) {
     const el = this.splitEl(side);
     if (!el || el.classList.contains("auto-sidebar-visible"))
@@ -235,21 +225,19 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     if (split == null ? void 0 : split.collapsed)
       split.expand();
     el.style.setProperty("width", this.widthOf(side) + "px", "important");
-    el.classList.add("auto-sidebar-animate-overlay");
     el.classList.add("auto-sidebar-visible");
-    setTimeout(() => {
-      el.classList.remove("auto-sidebar-animate-overlay");
-    }, SHOW_SPRING_MS + 50);
+    if (side === "right") {
+      document.body.classList.add("auto-sidebar-right-overlay");
+    }
   }
   concealOverlay(side) {
     const el = this.splitEl(side);
     if (!el || !el.classList.contains("auto-sidebar-visible"))
       return;
-    el.style.transition = this.hideTransition;
     el.classList.remove("auto-sidebar-visible");
-    setTimeout(() => {
-      el.style.removeProperty("transition");
-    }, HIDE_SMOOTH_MS + 50);
+    if (side === "right") {
+      document.body.classList.remove("auto-sidebar-right-overlay");
+    }
   }
   edgeCheck(side, x, y) {
     if (this.disabledState(side))
@@ -405,12 +393,12 @@ var AutoSidebarPlugin = class extends import_obsidian.Plugin {
     const split = this.splitAPI(side);
     if (split == null ? void 0 : split.collapsed)
       split.expand();
+    if (side === "right") {
+      document.body.classList.remove("auto-sidebar-right-overlay");
+    }
     el.classList.remove(
       "auto-sidebar-compact",
-      "auto-sidebar-visible",
-      "auto-sidebar-animate-overlay",
-      "auto-sidebar-animate-size",
-      "auto-sidebar-collapsed"
+      "auto-sidebar-visible"
     );
     el.style.removeProperty("width");
     if (this.obsidianWidth[side]) {

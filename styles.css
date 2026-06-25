@@ -41,22 +41,11 @@
   pointer-events: auto;
 }
 
-/* ── Overlay show/hide animation (springy Zen-like overshoot) ── */
+/* ════════════════════════════════════════════════════════════════
+   Scrollbar lock — right sidebar overlay hides main scrollbar
+   ════════════════════════════════════════════════════════════════ */
 
-.workspace-split.auto-sidebar-compact.auto-sidebar-animate-overlay {
-  transition: transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1) !important;
-}
-
-/* ── NCM ↔ CM toggle size animation (flex-basis shrink/grow) ── */
-
-.auto-sidebar-animate-size {
-  transition: flex-basis 200ms ease, min-width 200ms ease !important;
-}
-
-/* ── Collapsed state during NCM → CM shrink animation ── */
-
-.auto-sidebar-collapsed {
-  flex-basis: 0px !important;
-  min-width: 0px !important;
+body.auto-sidebar-right-overlay .workspace-split.mod-root .view-content,
+body.auto-sidebar-right-overlay .workspace-split.mod-root .cm-scroller {
   overflow: hidden !important;
 }
