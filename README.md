@@ -1,63 +1,66 @@
 # Auto Sidebar
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/TYBLHQY/auto-sidebar)](https://github.com/TYBLHQY/auto-sidebar/releases)
 
-**Auto Sidebar** brings a Zen Browser-style compact mode to Obsidian's sidebars. The left sidebar stays hidden until you move your mouse to the edge of the window — then it smoothly slides into view.
+Hover the edge of the window to reveal the sidebar — hides automatically when not in use. A compact mode for Obsidian inspired by Zen Browser.
 
-![Demo](https://raw.githubusercontent.com/TYBLHQY/auto-sidebar/main/demo.gif)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/TYBLHQY/auto-sidebar/main/demo.gif">
+  <img alt="Auto Sidebar demo" src="https://raw.githubusercontent.com/TYBLHQY/auto-sidebar/main/demo.gif">
+</picture>
+
+## Quick Start
+
+1. Install from **Settings → Community plugins → Browse → "Auto Sidebar"**
+2. Open the **Command Palette** (Ctrl/Cmd+P) and run **Toggle compact mode**
+3. Move the cursor to the left edge of the window — the sidebar slides in
 
 ## Features
 
-- 🖱️ **Hover-to-reveal** — Sidebar hides offscreen; hover the left edge to show it
-- ⚡ **Smooth animations** — CSS-powered transitions (fast hide, graceful reveal)
-- 🧠 **Smart persistence** — Remembers compact mode state and sidebar width across restarts
-- 🔁 **Toggle command** — Use the command palette to toggle compact mode on/off
-- 🪶 **Lightweight** — Zero external network requests, no dependencies beyond Obsidian's API
+| Feature | Description |
+|---|---|
+| Hover-to-reveal | Sidebar hides offscreen; hover the left edge to show it |
+| CSS transitions | Fast hide (0.15s), smooth reveal (0.25s ease-out) |
+| State persistence | Remembers compact mode and sidebar width across restarts |
+| Command toggle | Toggle compact mode on/off from the command palette |
+| Window-aware | Concedes sidebar when tabbing away or switching monitors |
+
+## Motivation
+
+Obsidian's sidebar takes up screen space even when unused. Standard collapse narrows the editor but keeps the sidebar dock visible. Auto Sidebar removes the sidebar entirely from the layout — it overlays on demand — giving the note-taking area the full window while preserving one-click access to the file tree and navigation.
 
 ## How it works
 
-When compact mode is active, the left sidebar is positioned absolutely and translated offscreen via CSS `transform`. Moving the cursor within 8 px of the left edge of the window reveals it as an overlay. Moving the mouse away hides it after a 150 ms delay.
-
-The plugin also watches for `mouseleave` on the document and `blur` on the window to conceal the sidebar when you tab away or move to another monitor.
+The plugin positions the left sidebar absolutely and translates it offscreen via CSS `transform`. A mouse within 8 px of the left window edge triggers the overlay. Moving away hides it after a 150 ms delay. `mouseleave` and `blur` events catch context switches.
 
 ## Installation
 
-### From the Community Plugin Directory (pending review)
+### Community plugin directory
 
-1. Open **Settings** → **Community plugins**
-2. Disable **Safe mode**
-3. Click **Browse** and search for "Auto Sidebar"
-4. Install and enable the plugin
+- **Settings → Community plugins → Browse → "Auto Sidebar"**
 
-### Manual / BRAT
+### BRAT (manual)
 
-> **Note:** This plugin is listed in the Obsidian Community Plugin directory. For manual installation via [BRAT](https://github.com/TfTHacker/obsidian42-brat), add `TYBLHQY/auto-sidebar` to your BRAT plugin list.
-
-## Usage
-
-1. **Enable** the plugin in **Settings** → **Community plugins**
-2. Open the **Command Palette** (Ctrl/Cmd+P)
-3. Run **"Toggle compact mode"**
-4. Move your cursor to the left edge of the window to reveal the sidebar
-5. Run the command again to exit compact mode
+Add `TYBLHQY/auto-sidebar` to your [BRAT](https://github.com/TfTHacker/obsidian42-brat) plugin list.
 
 ## Compatibility
 
-| Obsidian Version | Status |
-|-----------------|--------|
-| ≥ 0.15.0        | ✅ Supported |
-| Desktop only     | ⚠️ Not available on mobile |
+| Target | Status |
+|---|---|
+| Obsidian ≥ 0.15.0 | Supported |
+| Mobile | Not available |
 
-This plugin requires a desktop environment (electron) for the hover detection and window blur events to work correctly.
+Desktop-only. Hover detection and window blur events depend on an Electron environment.
 
 ## Privacy
 
-Auto Sidebar makes **no network requests**, collects **no telemetry**, and communicates with **no external services**. All data (compact mode state, sidebar width) is stored locally in your Obsidian plugin data directory.
+Auto Sidebar makes no network requests, collects no telemetry, and communicates with no external services. All data (compact mode state, sidebar width) is stored locally in the Obsidian plugin data directory.
+
+## Contributing
+
+Open an [issue](https://github.com/TYBLHQY/auto-sidebar/issues) or pull request.
 
 ## License
 
-Licensed under the [MIT License](LICENSE).
-
----
-
-*Not an official Obsidian plugin. Built for the Obsidian community.*
+[MIT](LICENSE)
